@@ -1,10 +1,15 @@
-const { app, BrowserWindow, Menu, protocol, net } = require('electron')
+const { app, BrowserWindow, Menu, protocol, net, ipcMain, dialog, shell } = require('electron')
 const { join, resolve, sep } = require('node:path')
 const { pathToFileURL } = require('node:url')
 
 app.setName('Pepe')
+app.setPath('userData', process.env.PEPE_DATA_DIR || join(app.getPath('appData'), 'Pepe'))
+let services
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'pepe', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  {
+    scheme: 'pepe',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+  },
 ])
 
 function send(command) {
@@ -69,10 +74,56 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const dist = resolve(__dirname, '../dist')
-  protocol.handle('pepe', (request) => {
+  const { createServices } = await import('./services.mjs')
+  services = await createServices({
+    dataDir: app.getPath('userData'),
+    root: process.env.PEPE_LIBRARY_DIR || join(app.getPath('documents'), 'Pepe'),
+    sample: join(dist, 'attention-is-all-you-need.pdf'),
+    dialog,
+    shell,
+    getWindow: () => BrowserWindow.getFocusedWindow(),
+    publish: (event) => {
+      for (const window of BrowserWindow.getAllWindows())
+        if (!window.isDestroyed()) window.webContents.send('pepe:event', event)
+    },
+  })
+  const trusted = (event) => {
+    const source = event.senderFrame?.url || ''
+    return (
+      event.senderFrame === event.sender.mainFrame &&
+      (source.startsWith('pepe://reader/') ||
+        (process.env.PEPE_DEV_URL &&
+          new URL(source).origin === new URL(process.env.PEPE_DEV_URL).origin))
+    )
+  }
+  ipcMain.handle('pepe:invoke', async (event, method, data) => {
+    if (!trusted(event)) throw new Error('Untrusted reader request.')
+    return services.invoke(method, data)
+  })
+  ipcMain.handle('pepe:open-file', async (event, path) => {
+    if (!trusted(event) || typeof path !== 'string' || !/\.pdf$/i.test(path))
+      throw new Error('Choose a PDF file.')
+    return services.library.register(path)
+  })
+  protocol.handle('pepe', async (request) => {
     const url = new URL(request.url)
+    if (url.host === 'paper') {
+      try {
+        const record = services.library.record(url.pathname.slice(1))
+        const response = await net.fetch(pathToFileURL(record.path).toString())
+        const headers = new Headers(response.headers)
+        headers.set('Content-Type', 'application/pdf')
+        headers.set(
+          'Access-Control-Allow-Origin',
+          process.env.PEPE_DEV_URL ? new URL(process.env.PEPE_DEV_URL).origin : 'pepe://reader',
+        )
+        return new Response(response.body, { headers, status: response.status })
+      } catch {
+        return new Response('Paper unavailable', { status: 404 })
+      }
+    }
     if (url.host !== 'reader') return new Response('Not found', { status: 404 })
     let file
     try {
@@ -140,9 +191,17 @@ app.whenReady().then(() => {
     ]),
   )
   createWindow()
+  services.research.resumeSummaries()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+let shuttingDown = false
+app.on('before-quit', (event) => {
+  if (shuttingDown || !services) return
+  event.preventDefault()
+  shuttingDown = true
+  void services.close().finally(() => app.quit())
 })
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

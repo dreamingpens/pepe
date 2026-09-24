@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Icon } from './Icons'
 import type { OutlineItem, Paper } from './usePaper'
 
@@ -20,10 +20,9 @@ export function SidePanel({
   setWidth,
   tone,
   setTone,
-  passage,
-  setPassage,
-  draft,
-  setDraft,
+  chat,
+  actions,
+  references,
   commandKey,
   loading,
 }: {
@@ -40,15 +39,13 @@ export function SidePanel({
   setWidth: (width: number) => void
   tone: Tone
   setTone: (tone: Tone) => void
-  passage: Passage | null
-  setPassage: (passage: Passage | null) => void
-  draft: string
-  setDraft: (draft: string) => void
+  chat: ReactNode
+  actions: ReactNode
+  references: ReactNode
   commandKey: string
   loading: boolean
 }) {
   const panelRef = useRef<HTMLElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const focusTab = useRef(false)
   const [jumpPage, setJumpPage] = useState(String(page))
 
@@ -59,7 +56,10 @@ export function SidePanel({
         ?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
         ?.focus()
       focusTab.current = false
-    } else if (tab === 'chat') textareaRef.current?.focus({ preventScroll: true })
+    } else if (tab === 'chat')
+      panelRef.current
+        ?.querySelector<HTMLTextAreaElement>('textarea')
+        ?.focus({ preventScroll: true })
     else panelRef.current?.focus({ preventScroll: true })
   }, [tab])
 
@@ -114,7 +114,7 @@ export function SidePanel({
             }}
             onClick={() => setTab('chat')}
           >
-            Assistant<span className="preview-tag">Preview</span>
+            Assistant
           </button>
         </div>
         <button
@@ -145,6 +145,7 @@ export function SidePanel({
               <kbd>{commandKey}O</kbd>
             </button>
             <p className="drop-hint">You can also drop a PDF anywhere.</p>
+            {actions}
             {error && (
               <div className="file-error" role="alert">
                 <p>{error}</p>
@@ -271,6 +272,7 @@ export function SidePanel({
                 )}
               </section>
             )}
+            {references}
           </div>
           <footer className="panel-footer">
             <details className="shortcuts">
@@ -325,87 +327,7 @@ export function SidePanel({
           </footer>
         </div>
       ) : (
-        <div className="chat-panel" id="chat-panel" role="tabpanel" aria-labelledby="chat-tab">
-          <div className="chat-paper">
-            <Icon name="paper" size={15} />
-            <span>{paper?.title ?? 'No paper open'}</span>
-          </div>
-          <div className="chat-empty">
-            <div className="chat-mark">
-              <Icon name="chat" size={24} />
-            </div>
-            <h2>Room to think.</h2>
-            <p>
-              A question, a connection,
-              <br />a passage worth a closer look.
-            </p>
-            <div className="selection-hint">
-              Select text in the paper, then press <kbd>{commandKey}L</kbd>
-              <br />
-              to bring it here.
-            </div>
-          </div>
-          <div className="composer-area">
-            {passage && (
-              <div className="selected-passage">
-                <div className="passage-header">
-                  <span>
-                    <Icon name="quote" size={13} /> Selected passage
-                  </span>
-                  <button onClick={() => goToPage(passage.page)}>Page {passage.page}</button>
-                  <button
-                    className="icon-button"
-                    onClick={() => setPassage(null)}
-                    aria-label="Remove selected passage"
-                  >
-                    <Icon name="close" size={13} />
-                  </button>
-                </div>
-                <blockquote>{passage.text}</blockquote>
-              </div>
-            )}
-            <div className="composer">
-              <textarea
-                ref={textareaRef}
-                aria-label="Ask about this paper"
-                placeholder="Ask about this paper…"
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                rows={4}
-              />
-              <div className="composer-tools">
-                <span className="context-label">
-                  <Icon name="paper" size={14} />
-                  {paper ? 'Paper in context' : 'Open a paper first'}
-                </span>
-                <button
-                  className="icon-button"
-                  disabled={!draft && !passage}
-                  onClick={() => {
-                    setDraft('')
-                    setPassage(null)
-                    textareaRef.current?.focus()
-                  }}
-                  aria-label="New draft"
-                  title="New draft"
-                >
-                  <Icon name="plus" size={17} />
-                </button>
-                <button
-                  className="send-button"
-                  disabled
-                  aria-label="Send message (AI is not connected yet)"
-                  title="AI will be connected after the interface review"
-                >
-                  <Icon name="arrow" size={17} />
-                </button>
-              </div>
-            </div>
-            <p className="preview-note">
-              AI isn’t connected in this preview. Your draft stays here.
-            </p>
-          </div>
-        </div>
+        chat
       )}
     </aside>
   )

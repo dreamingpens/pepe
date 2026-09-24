@@ -5,7 +5,7 @@ const modifier = process.platform === 'darwin' ? 'Meta' : 'Control'
 const panel = (page: Page) => page.getByRole('complementary', { name: 'Reading panel' })
 
 async function start(page: Page) {
-  await page.goto('/')
+  await page.goto('/?sample=1')
   await expect(page.locator('.pdf-page').first().locator('canvas')).toBeVisible()
   await expect(page.locator('.textLayer').first().locator('span').first()).toBeAttached()
 }
@@ -101,13 +101,11 @@ test('opening a local PDF resets context and handles invalid files without losin
   await expect(page.locator('.pdf-page').first().locator('canvas')).toBeVisible()
   await page.keyboard.press(`${modifier}+l`)
   await expect(page.getByRole('textbox', { name: 'Ask about this paper' })).toHaveValue('')
-  await page
-    .locator('input[type="file"]')
-    .setInputFiles({
-      name: 'broken.pdf',
-      mimeType: 'application/pdf',
-      buffer: Buffer.from('not a PDF'),
-    })
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'broken.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('not a PDF'),
+  })
   await expect(page.getByRole('alert')).toContainText('couldn’t be opened')
   await expect(page.locator('.pdf-page').first().locator('canvas')).toBeVisible()
   await page.getByRole('button', { name: 'Dismiss error' }).click()

@@ -1,5 +1,7 @@
 import { _electron as electron, expect, test } from '@playwright/test'
-import { resolve } from 'node:path'
+import { resolve, join } from 'node:path'
+import { mkdtemp } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 
 test('the built desktop app opens offline and handles native shortcuts', async () => {
   const env = Object.fromEntries(
@@ -9,11 +11,15 @@ test('the built desktop app opens offline and handles native shortcuts', async (
   )
   delete env.ELECTRON_RUN_AS_NODE
   delete env.PEPE_DEV_URL
+  const data = await mkdtemp(join(tmpdir(), 'pepe-desktop-'))
+  env.PEPE_DATA_DIR = join(data, 'data')
+  env.PEPE_LIBRARY_DIR = join(data, 'papers')
   const app = await electron.launch({ args: [resolve('.')], env })
   try {
     const page = await app.firstWindow()
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
+    await page.getByRole('button', { name: 'Read the sample paper' }).click()
     await expect(page.locator('.pdf-page').first().locator('canvas')).toBeVisible()
     expect(page.url()).toBe('pepe://reader/index.html')
     await expect(page.getByRole('button')).toHaveCount(1)

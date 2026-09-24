@@ -1,62 +1,82 @@
 # Pepe
 
-A quiet desktop paper reader. This is the **item 1 UI/UX review** from [plan.md](plan.md).
+A quiet desktop library for reading and understanding research papers. All seven items in [plan.md](plan.md) are implemented, with the accepted paper-only reading layout preserved.
 
-The reading view contains one paper tab and the PDF itself. No toolbar, sidebar, page counter, floating actions, or hover controls appear while reading. Clicking the paper tab reveals reading controls; closing the panel returns to the paper.
+## Run
 
-## Run the desktop app
-
-Requires Node.js 24 or newer. Dependencies and the sample paper are included in the current workspace setup.
+Requires Node.js 24+, macOS, and the [Codex CLI](https://developers.openai.com/codex/cli/) for AI features.
 
 ```sh
 npm install
-npm run dev
-```
-
-To run the built app without a development server:
-
-```sh
 npm run build
 npm start
 ```
 
-The built app reads PDFs locally and works offline. Files are never uploaded. Reading appearance is saved locally; the current PDF, selected passage, and chat draft remain in memory for this session. The sample opens again on restart.
+For development, use `npm run dev`. The browser preview (`npm run dev:web`) supports PDF reading; the desktop app provides the library, native shortcuts, and Codex connection.
 
-## Try the interface
+The app starts on your library dashboard. Open a local PDF, drop one into the window, add a direct PDF URL/arXiv ID, or use **Discover** to search arXiv by title, author, or keywords. The bundled sample is available from an empty library.
 
-| Action                           | Interaction                                                    |
-| -------------------------------- | -------------------------------------------------------------- |
-| Reading controls                 | Click the paper tab, or **⌘⇧L**                                |
-| Open a PDF                       | **⌘O**, drop a PDF into the window, or use the reading panel   |
-| Assistant preview                | **⌘L** to unfold or fold the right panel                       |
-| Bring a passage into the preview | Select text in the PDF, then **⌘L**                            |
-| Return to reading                | **Esc**, the panel’s close button, or the same toggle shortcut |
-| Change paper size                | **⌘+**, **⌘−**, **⌘0**, or the reading panel                   |
-| Navigate                         | Scroll, use the page field, or choose a section in Contents    |
-| Full screen                      | **⌃⌘F** on macOS (also in the native View menu)                |
-| Move / close window              | Drag the empty top strip / **⌘W**; **⌘Q** quits                |
+## Reading and the assistant
 
-On Windows and Linux, use Ctrl in place of ⌘. macOS is the platform verified for this review.
+| Action                                           | Interaction                                                    |
+| ------------------------------------------------ | -------------------------------------------------------------- |
+| Reading controls                                 | Click the paper tab, or **⌘⇧L**                                |
+| Open a local PDF                                 | **⌘O**, drag and drop, or **Open a paper**                     |
+| Toggle assistant                                 | **⌘L**                                                         |
+| Ask about a passage                              | Select PDF text, then **⌘L**                                   |
+| Return to reading                                | **Esc** or the same panel shortcut                             |
+| Follow an answer’s source                        | Click its page link; the source line is highlighted            |
+| Follow a citation                                | Click a citation in the PDF, or a reference in the Paper panel |
+| Explain a figure/equation                        | Click its region; use right-click anywhere for unusual layouts |
+| Change paper size                                | **⌘+**, **⌘−**, **⌘0**, or the Paper panel                     |
+| Return to the dashboard / save a temporary paper | Open the Paper panel                                           |
+| Move / close / quit                              | Drag the top strip / **⌘W** / **⌘Q**                           |
 
-The panel borrows the understated header and composer from the supplied chat screenshots. It supports selected passages and an editable draft so the interaction can be reviewed. **AI is not connected, and Send is disabled.** The draft survives folding the panel, and opening a new PDF clears the previous paper’s draft and selection.
+Use Ctrl instead of ⌘ on other platforms; macOS is the tested platform.
 
-Items 2–6 remain for later: backend/performance work, AI/OAuth/model controls, answers and reference navigation, citation downloads, the library/dashboard, and automatic summaries. There is no account setup or external service in this pass.
+**Settings** connects to Codex using its official app-server protocol. Existing ChatGPT subscription authentication is reused. Otherwise, **Sign in with ChatGPT** opens the official browser OAuth flow. Pepe never reads or copies access tokens. An authenticated API-key Codex installation also works, using that installation’s billing.
 
-## Verify
+GPT-6 Astra is the default. Available models and thinking levels come from your account’s model catalog. Fast mode, answer length, thinking level, and summary format are configurable. Fast mode uses additional subscription capacity. Answers stream into the panel; **Stop** interrupts them. **History** searches this paper’s conversations, reopens a conversation, or continues its messages in a new chat. Conversations and answers survive restarts; unsent drafts survive folding the panel during the current reading session.
+
+Paper text is indexed with page/line locations. Visual questions additionally send a rendered image of the complete page, preserving diagrams, tables, and mathematical notation that text extraction can lose. Answer references are checked against the indexed paper before becoming clickable.
+
+## Library and summaries
+
+The default library is `~/Documents/Pepe`. Choose another root folder from the dashboard. Create nested folders, rename them, move saved papers, and remove empty folders. Existing PDFs inside the root are discovered on startup or **Refresh library**. Local search includes titles, authors, filenames, and indexed paper text.
+
+Citation popups offer **Open**, **Download**, and **Summarize**. Open uses a temporary cache without adding a PDF to your library. Download saves to the automatically managed `citations` folder and records which paper cited it. A temporarily opened citation can be saved later from the Paper panel. Metadata matches are presented as candidates; a direct PDF URL can be supplied when no downloadable match is found.
+
+Downloaded papers are indexed and summarized in the background. Reading and downloads do not wait for the AI summary. Select a paper on the dashboard to see its cached quick summary; choose **Bullets** or **Paragraph**. Automatic summaries can be turned off. Summaries and page images are invalidated when a refreshed file changes.
+
+PDFs live in the chosen library. The manifest, conversations, temporary PDFs, indexes, and page images live in `~/Library/Application Support/Pepe` on macOS. Codex manages its own authentication and thread storage. Paper text, selected passages, conversation context, and requested page images are sent to Codex for answers and summaries. PDF reading and existing library content work offline; AI and online discovery require connectivity.
+
+## Implementation and limits
+
+Electron hosts a sandboxed renderer with a narrow IPC interface. React/TypeScript handles the interface, PDF.js renders selectable pages, and a worker thread builds indexes and full-page images. Only nearby PDF pages are mounted/rendered. PDF.js, Markdown, and math formatting load on demand; the initial application JavaScript is about 266 kB before compression. Fonts and PDF rendering assets are bundled locally.
+
+A Rust backend was unnecessary for the measured workload: the ten-paper corpus contains 273 pages and indexes each paper in roughly 0.15–1.1 seconds on this machine. Measurements are in [artifacts/corpus-report.json](artifacts/corpus-report.json); long-document rendering measurements are in [artifacts/reader-performance.json](artifacts/reader-performance.json).
+
+PDF layouts vary. Numbered, author/year, alphanumeric bibliography labels, ranges, and PDF citation destinations are supported, but citation/visual-region detection is heuristic. The reference list, direct PDF link field, selected-passage context, and right-click page explanation provide fallbacks. Scanned PDFs remain visually readable and explainable, but have no text OCR/indexed line references. Encrypted PDFs require an unlocked copy. Downloads are limited to 100 MB and public HTTPS sources. Paywalled or unavailable papers may have no downloadable match.
+
+For long papers, AI context is capped and ranked by question, selected page, and abstract; the prompt explicitly states how many pages are included. Whole-page vision preserves visual content, rather than claiming lossless conversion of arbitrary figures or formulas into structured math. Summaries and explanations can still contain model errors.
+
+## Verification
 
 ```sh
-npx playwright install chromium
-npm test
+npm run check
+npm test                  # Backend regression tests, build, desktop + browser tests
+npm run test:corpus       # Downloads/indexes ten real arXiv papers; keeps a local ignored cache
+npm run test:live         # Uses the connected Codex account for three live AI checks
 ```
 
-Six end-to-end tests cover the built Electron app, native and DOM shortcuts, file opening, paper-only mode, panel navigation, reading-position preservation, selectable text, draft retention, invalid files, keyboard focus, smaller windows, and local appearance preferences. Review screenshots are written to `artifacts/`.
+Install Playwright’s browser once with `npx playwright install chromium`. The long-document desktop benchmark uses the corpus cache and runs after `npm run test:corpus`.
 
-`npm run dev:web` also provides a browser preview at <http://127.0.0.1:5173>. Browsers may reserve ⌘L and ⌘O, so use the paper tab to reach the controls and Assistant there; the desktop app supports both shortcuts directly.
+Automated tests cover storage and folder safety, concurrent citation downloads, source validation, Codex streaming/resume/cancellation/failure paths, summary caching, restart persistence, native shortcuts, PDF selection, citation/formula clicks, and render virtualization. Routine AI tests use a local protocol fixture and incur no model usage. [Live validation](artifacts/live-validation.json) separately confirms real Astra answers, multi-turn page-image explanations, and fast-mode summaries. Screenshots are written to `artifacts/`.
 
-## Implementation and sample
+For isolated development/tests, `PEPE_DATA_DIR` and `PEPE_LIBRARY_DIR` override storage locations; `PEPE_CODEX_BIN` selects a Codex executable.
 
-React + TypeScript handle the interface, PDF.js renders the paper with selectable text, and Electron provides the desktop window and shortcuts. The sandboxed renderer has no Node.js or filesystem API access. Its preload bridge only receives a fixed set of reader commands. PDF rendering assets and fonts are bundled locally.
+## Sample and licenses
 
-The unmodified sample is [Attention Is All You Need, Vaswani et al. (2017), arXiv v5](https://arxiv.org/abs/1706.03762v5), downloaded from [arXiv](https://arxiv.org/pdf/1706.03762v5) for this local reading review. The paper remains the work of its authors.
+The unmodified sample is [Attention Is All You Need, Vaswani et al. (2017), arXiv v5](https://arxiv.org/abs/1706.03762v5). Corpus PDFs are fetched from their original arXiv URLs, recorded in the corpus report, and excluded from Git. The papers remain the work of their authors.
 
-PDF.js is provided by the Mozilla Foundation under Apache-2.0; its text-layer positioning styles are adapted in `src/pdf-text-layer.css`. See [the PDF.js license](LICENSES/pdfjs.txt).
+PDF.js is provided by the Mozilla Foundation under Apache-2.0; text-layer positioning styles are adapted in `src/pdf-text-layer.css`. See [the PDF.js license](LICENSES/pdfjs.txt). Dependency licenses remain in their distributed packages.

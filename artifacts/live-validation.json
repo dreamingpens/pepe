@@ -1,0 +1,21 @@
+{
+  "date": "2026-09-24T11:43:35.233Z",
+  "checks": [
+    {
+      "name": "Astra chat with valid paper sources",
+      "passed": true,
+      "sources": 1
+    },
+    {
+      "name": "Multiturn continuation with full page vision and formulas",
+      "passed": true,
+      "sources": 2,
+      "imageBytes": 545743
+    },
+    {
+      "name": "Fast mode summary",
+      "passed": true,
+      "sources": 10
+    }
+  ]
+}

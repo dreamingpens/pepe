@@ -1,0 +1,284 @@
+import { useEffect, useRef, useState } from 'react'
+import { invoke } from './api'
+import { Answer } from './Answer'
+import { Icon } from './Icons'
+import type { PaperInteraction } from './PdfReader'
+import type { Chat, PaperIndex, PaperRecord, SearchResult, Source, Summary } from './types'
+
+export function PaperPopover({
+  interaction,
+  paper,
+  index,
+  onClose,
+  onOpen,
+  onSource,
+  onContinue,
+}: {
+  interaction: PaperInteraction
+  paper: PaperRecord
+  index: PaperIndex | null
+  onClose: () => void
+  onOpen: (paper: PaperRecord) => void
+  onSource: (source: Source) => void
+  onContinue: (chatId: string) => void
+}) {
+  const [referenceId, setReferenceId] = useState(
+    interaction.kind === 'citation' ? interaction.referenceIds[0] : '',
+  )
+  const reference = index?.references.find((reference) => reference.id === referenceId)
+  const [results, setResults] = useState<SearchResult[]>([]),
+    [candidate, setCandidate] = useState(0),
+    [busy, setBusy] = useState(''),
+    [error, setError] = useState(''),
+    [answer, setAnswer] = useState(''),
+    [sources, setSources] = useState<Source[]>([]),
+    [chatId, setChatId] = useState(''),
+    [summaryPaper, setSummaryPaper] = useState<PaperRecord | null>(null)
+  const [url, setUrl] = useState('')
+  const popup = useRef<HTMLElement>(null)
+  useEffect(() => {
+    popup.current?.focus()
+    const dismiss = (event: MouseEvent) => {
+      if (!popup.current?.contains(event.target as Node)) onClose()
+    }
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', dismiss)
+    document.addEventListener('keydown', escape, true)
+    return () => {
+      document.removeEventListener('mousedown', dismiss)
+      document.removeEventListener('keydown', escape, true)
+    }
+  }, [onClose])
+  useEffect(() => {
+    if (!referenceId) return
+    let cancelled = false
+    setBusy('resolve')
+    setError('')
+    setAnswer('')
+    setSources([])
+    setSummaryPaper(null)
+    setCandidate(0)
+    setResults([])
+    void invoke<SearchResult[]>('paper/resolve', { paperId: paper.id, referenceId })
+      .then((value) => {
+        if (!cancelled) setResults(value)
+      })
+      .catch((error) => {
+        if (!cancelled) setError(error.message)
+      })
+      .finally(() => {
+        if (!cancelled) setBusy('')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [referenceId, paper.id])
+  useEffect(
+    () =>
+      window.pepe?.onEvent((event) => {
+        if (event.type !== 'answer' || event.chatId !== chatId) return
+        if (event.status === 'streaming') setAnswer(event.text || '')
+        else {
+          setBusy('')
+          setAnswer(event.message?.text || '')
+          setSources(event.message?.sources || [])
+          setError(event.error || '')
+        }
+      }),
+    [chatId],
+  )
+  async function citationAction(action: 'open' | 'save' | 'summary') {
+    setBusy(action)
+    setError('')
+    try {
+      const result = results[candidate]
+      const opened = await invoke<PaperRecord>('paper/download', {
+        url: url || result?.pdfUrl,
+        title: result?.title || reference?.title,
+        save: action === 'save',
+        citedBy: paper.id,
+      })
+      if (action === 'open') onOpen(opened)
+      if (action === 'save') {
+        setAnswer('Saved to your citations folder.')
+        setSources([])
+        setSummaryPaper(null)
+      }
+      if (action === 'summary') {
+        const summary = await invoke<Summary>('paper/summary', { id: opened.id })
+        setAnswer(summary.text || '')
+        setSources(summary.sources || [])
+        setSummaryPaper(opened)
+      }
+    } catch (error) {
+      setError((error as Error).message)
+    } finally {
+      setBusy('')
+    }
+  }
+  async function explain() {
+    if (interaction.kind !== 'visual') return
+    setBusy('explain')
+    setError('')
+    try {
+      const chat = await invoke<Chat>('chat/new', { paperId: paper.id })
+      setChatId(chat.id)
+      await invoke('chat/send', {
+        chatId: chat.id,
+        text: `Explain ${interaction.visual.label} on page ${interaction.visual.page}. Describe its components, notation, and what it demonstrates, grounded in the paper.`,
+        page: interaction.visual.page,
+        visual: interaction.visual,
+      })
+    } catch (error) {
+      setError((error as Error).message)
+      setBusy('')
+    }
+  }
+  const liveSources =
+    index?.pages.flatMap((page) =>
+      page.lines.map((line) => ({ page: page.number, line: line.id, y: line.y, text: line.text })),
+    ) || []
+  return (
+    <section
+      className="paper-popover"
+      ref={popup}
+      tabIndex={-1}
+      role="dialog"
+      aria-label={interaction.kind === 'citation' ? 'Cited paper' : 'Figure or formula explanation'}
+      style={{
+        left: Math.max(12, Math.min(interaction.x + 12, window.innerWidth - 422)),
+        top: Math.max(12, Math.min(interaction.y + 12, window.innerHeight - 510)),
+      }}
+    >
+      <header>
+        <span className="eyebrow">
+          {interaction.kind === 'citation'
+            ? 'FOLLOW THE REFERENCE'
+            : `A CLOSER LOOK · PAGE ${interaction.visual.page}`}
+        </span>
+        <button className="icon-button" aria-label="Close popup" onClick={onClose}>
+          <Icon name="close" size={15} />
+        </button>
+      </header>
+      {interaction.kind === 'citation' ? (
+        <>
+          {interaction.referenceIds.length > 1 && (
+            <select
+              aria-label="Choose citation"
+              value={referenceId}
+              onChange={(event) => setReferenceId(event.target.value)}
+            >
+              {interaction.referenceIds.map((id) => (
+                <option key={id} value={id}>
+                  {index?.references.find((r) => r.id === id)?.text}
+                </option>
+              ))}
+            </select>
+          )}
+          <h2>{reference?.title || 'Cited paper'}</h2>
+          <p className="citation-bibliography">{reference?.text}</p>
+          {busy === 'resolve' && <p className="muted">Looking for the full paper…</p>}
+          {results.length > 0 && (
+            <label className="candidate-label">
+              {results.length > 1 ? 'Choose a matching paper' : 'Available paper'}
+              <select
+                aria-label="Matching paper"
+                value={candidate}
+                onChange={(event) => setCandidate(Number(event.target.value))}
+              >
+                {results.map((result, index) => (
+                  <option key={result.id} value={index}>
+                    {result.title} · {result.year}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {(!results.length || !results[candidate]?.pdfUrl) && busy !== 'resolve' && (
+            <label className="candidate-label">
+              Direct PDF link
+              <input
+                aria-label="Citation PDF URL"
+                value={url}
+                placeholder="https://…/paper.pdf"
+                onChange={(event) => setUrl(event.target.value)}
+              />
+            </label>
+          )}
+          <div className="popover-actions">
+            <button
+              className="secondary-button"
+              disabled={!!busy || (!url && !results[candidate]?.pdfUrl)}
+              onClick={() => void citationAction('open')}
+            >
+              Open
+            </button>
+            <button
+              className="secondary-button"
+              disabled={!!busy || (!url && !results[candidate]?.pdfUrl)}
+              onClick={() => void citationAction('summary')}
+            >
+              Summarize
+            </button>
+            <button
+              className="primary-button"
+              disabled={!!busy || (!url && !results[candidate]?.pdfUrl)}
+              onClick={() => void citationAction('save')}
+            >
+              Download
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <h2>{interaction.visual.label}</h2>
+          <p className="muted">
+            The assistant will inspect the complete page, including the surrounding text and
+            mathematical notation.
+          </p>
+          <button className="primary-button" disabled={!!busy} onClick={() => void explain()}>
+            {answer ? 'Explain again' : 'Explain this'}
+          </button>
+        </>
+      )}
+      {busy && busy !== 'resolve' && (
+        <p className="muted" role="status">
+          {busy === 'explain'
+            ? 'Inspecting the page…'
+            : busy === 'summary'
+              ? 'Reading the cited paper…'
+              : 'Downloading paper…'}
+        </p>
+      )}
+      {error && (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      )}
+      {answer && (
+        <Answer
+          text={answer}
+          sources={
+            interaction.kind === 'citation' ? sources : sources.length ? sources : liveSources
+          }
+          onSource={summaryPaper ? undefined : onSource}
+        />
+      )}
+      {summaryPaper && (
+        <button className="text-button" onClick={() => onOpen(summaryPaper)}>
+          Read the cited paper →
+        </button>
+      )}
+      {chatId && (
+        <button className="text-button" onClick={() => onContinue(chatId)}>
+          Continue in assistant →
+        </button>
+      )}
+    </section>
+  )
+}

@@ -4,4 +4,6 @@ test-results/
 playwright-report/
 .DS_Store
 *.tsbuildinfo
-
+tests/corpus/*.pdf
+.test-data/
+tests/corpus/*.index.json

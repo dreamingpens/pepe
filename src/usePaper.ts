@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  getDocument,
-  GlobalWorkerOptions,
-  type PDFDocumentLoadingTask,
-  type PDFDocumentProxy,
-} from 'pdfjs-dist'
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-
-GlobalWorkerOptions.workerSrc = workerUrl
+import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
+import type { PaperRecord } from './types'
 
 export type OutlineItem = NonNullable<Awaited<ReturnType<PDFDocumentProxy['getOutline']>>>[number]
 export type Paper = {
@@ -17,6 +10,7 @@ export type Paper = {
   author: string
   outline: OutlineItem[]
   firstPageSize: { width: number; height: number }
+  record?: PaperRecord
 }
 
 function assetUrl(path: string) {
@@ -25,18 +19,26 @@ function assetUrl(path: string) {
 
 export function usePaper() {
   const [paper, setPaper] = useState<Paper | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const pending = useRef<PDFDocumentLoadingTask | null>(null)
   const generation = useRef(0)
 
   const load = useCallback(
-    async (source: { data?: Uint8Array; url?: string; filename: string; title?: string }) => {
+    async (source: {
+      data?: Uint8Array
+      url?: string
+      filename: string
+      title?: string
+      record?: PaperRecord
+    }) => {
       const current = ++generation.current
       void pending.current?.destroy()
       setLoading(true)
       setError('')
       let needsPassword = false
+      const { getDocument } = await import('./pdf')
+      if (current !== generation.current) return
       const task = getDocument({
         ...(source.data ? { data: source.data } : { url: source.url }),
         cMapUrl: assetUrl('pdfjs/cmaps/'),
@@ -51,31 +53,32 @@ export function usePaper() {
       }
       try {
         const pdf = await task.promise
-        const [metadata, page, outline] = await Promise.all([
-          pdf.getMetadata().catch(() => null),
-          pdf.getPage(1),
-          pdf.getOutline().catch(() => null),
-        ])
+        const page = await pdf.getPage(1)
         if (current !== generation.current) {
           void pdf.loadingTask.destroy()
           return
         }
-        const info = metadata?.info as { Title?: string; Author?: string } | undefined
-        const title = info?.Title?.trim()
         const viewport = page.getViewport({ scale: 1 })
         setPaper({
           pdf,
           filename: source.filename,
-          title:
-            source.title ||
-            (title && title.toLowerCase() !== 'untitled'
-              ? title
-              : source.filename.replace(/\.pdf$/i, '')),
-          author: info?.Author?.trim() || '',
-          outline: outline ?? [],
+          title: source.title || source.filename.replace(/\.pdf$/i, ''),
+          author: source.record?.author || '',
+          record: source.record,
+          outline: [],
           firstPageSize: { width: viewport.width, height: viewport.height },
         })
         pending.current = null
+        // Optional metadata never delays the first visible page.
+        void pdf
+          .getOutline()
+          .then((outline) => {
+            if (current === generation.current)
+              setPaper((paper) =>
+                paper?.pdf === pdf ? { ...paper, outline: outline || [] } : paper,
+              )
+          })
+          .catch(() => {})
       } catch (cause) {
         if (current !== generation.current) return
         pending.current = null
@@ -94,11 +97,12 @@ export function usePaper() {
   )
 
   useEffect(() => {
-    void load({
-      url: assetUrl('attention-is-all-you-need.pdf'),
-      filename: 'attention-is-all-you-need.pdf',
-      title: 'Attention Is All You Need',
-    })
+    if (new URLSearchParams(location.search).has('sample'))
+      void load({
+        url: assetUrl('attention-is-all-you-need.pdf'),
+        filename: 'attention-is-all-you-need.pdf',
+        title: 'Attention Is All You Need',
+      })
     return () => {
       generation.current++
       void pending.current?.destroy()
@@ -109,7 +113,7 @@ export function usePaper() {
     () => () => {
       void paper?.pdf.loadingTask.destroy()
     },
-    [paper],
+    [paper?.pdf],
   )
 
   const openFile = useCallback(
@@ -127,5 +131,35 @@ export function usePaper() {
     [load],
   )
 
-  return { paper, loading, error, openFile, clearError: () => setError('') }
+  const openRecord = useCallback(
+    (record: PaperRecord) =>
+      load({ url: record.url, filename: record.filename, title: record.title, record }),
+    [load],
+  )
+  const openSample = useCallback(
+    () =>
+      load({
+        url: assetUrl('attention-is-all-you-need.pdf'),
+        filename: 'attention-is-all-you-need.pdf',
+        title: 'Attention Is All You Need',
+      }),
+    [load],
+  )
+  const close = useCallback(() => {
+    generation.current++
+    void pending.current?.destroy()
+    pending.current = null
+    setPaper(null)
+    setLoading(false)
+  }, [])
+  return {
+    paper,
+    loading,
+    error,
+    openFile,
+    openRecord,
+    openSample,
+    close,
+    clearError: () => setError(''),
+  }
 }

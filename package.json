@@ -1,9 +1,9 @@
 {
   "name": "pepe",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "A quiet place to read papers. UI/UX review build.",
+  "description": "A quiet desktop library for reading and understanding research papers.",
   "main": "electron/main.cjs",
   "engines": {
     "node": ">=24.0.0"
@@ -14,17 +14,27 @@
     "build": "tsc -b && vite build",
     "start": "electron .",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "npm run build && playwright test",
+    "test": "npm run test:backend && npm run build && playwright test",
     "check": "tsc -b",
-    "format": "prettier --write src electron scripts tests *.json *.ts index.html README.md"
+    "format": "prettier --write src electron scripts tests *.json *.ts index.html README.md",
+    "test:backend": "node --test tests/backend/*.test.mjs",
+    "test:corpus": "node scripts/validate-corpus.mjs",
+    "test:live": "node scripts/validate-live.mjs"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
+    "fast-xml-parser": "^5.11.1",
+    "katex": "^0.18.9",
     "pdfjs-dist": "6.3.289",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
+    "@types/katex": "^0.16.8",
     "@types/node": "^24.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
