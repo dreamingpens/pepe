@@ -1,13 +1,15 @@
 import { Library } from './library.mjs'
 import { Codex } from './codex.mjs'
 import { Research } from './research.mjs'
-import { searchPapers, resolveReference } from './network.mjs'
+import { searchPapers } from './network.mjs'
+import { ReferenceResolver } from './reference-resolver.mjs'
 import { join } from 'node:path'
 
 export async function createServices({ dataDir, root, sample, publish, dialog, shell, getWindow }) {
   const library = await new Library(dataDir, root).init()
   const codex = new Codex(join(dataDir, 'codex-workspace'))
   const research = new Research(library, codex, publish)
+  const resolver = new ReferenceResolver({ cacheFile: join(dataDir, 'reference-matches.json') })
   library.on('change', () => publish({ type: 'library' }))
   library.on('problem', (error) => publish({ type: 'problem', error }))
   const actions = {
@@ -35,9 +37,9 @@ export async function createServices({ dataDir, root, sample, publish, dialog, s
       const index = await library.index(data.paperId)
       const reference = index.references.find((r) => r.id === data.referenceId)
       if (!reference) throw new Error('Reference not found.')
-      return resolveReference(reference)
+      return resolver.resolve(reference, { refresh: data.refresh === true })
     },
-    'paper/summary': (data) => research.summarize(data.id, data.format),
+    'paper/summary': (data) => research.summarize(data.id, data.format, data.force === true),
     'settings/save': (data) => {
       const settings = library.settings(data)
       if (settings.autoSummary) research.resumeSummaries()
@@ -77,6 +79,7 @@ export async function createServices({ dataDir, root, sample, publish, dialog, s
     async close() {
       research.close()
       await codex.close()
+      await resolver.close()
       await library.close()
     },
   }

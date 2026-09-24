@@ -17,6 +17,7 @@ import { dirname, basename, resolve, join, relative, sep } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { PdfPool } from './pdf-pool.mjs'
 import { fetchPublic, paperUrl, validatePdf } from './network.mjs'
+import { enrichIndex, CITATION_INDEX_VERSION } from './citations.mjs'
 
 async function jsonFile(path, fallback) {
   try {
@@ -244,7 +245,12 @@ export class Library extends EventEmitter {
     const paper = this.record(id)
     if (this.indexing.has(id)) return this.indexing.get(id)
     const cached = await jsonFile(join(this.dataDir, 'indexes', id + '.json'), null)
-    return cached?.version === 2 ? cached : this.queueIndex(paper)
+    if (cached?.version === 2) {
+      enrichIndex(cached)
+      cached.version = CITATION_INDEX_VERSION
+      await writeFile(join(this.dataDir, 'indexes', id + '.json'), JSON.stringify(cached))
+    }
+    return cached?.version === CITATION_INDEX_VERSION ? cached : this.queueIndex(paper)
   }
   async image(id, page) {
     const index = await this.index(id)

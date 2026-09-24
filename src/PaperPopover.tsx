@@ -26,8 +26,8 @@ export function PaperPopover({
     interaction.kind === 'citation' ? interaction.referenceIds[0] : '',
   )
   const reference = index?.references.find((reference) => reference.id === referenceId)
-  const [results, setResults] = useState<SearchResult[]>([]),
-    [candidate, setCandidate] = useState(0),
+  const [result, setResult] = useState<SearchResult | null>(null),
+    [attempt, setAttempt] = useState(0),
     [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
     [answer, setAnswer] = useState(''),
@@ -62,11 +62,15 @@ export function PaperPopover({
     setAnswer('')
     setSources([])
     setSummaryPaper(null)
-    setCandidate(0)
-    setResults([])
-    void invoke<SearchResult[]>('paper/resolve', { paperId: paper.id, referenceId })
+    setResult(null)
+    setUrl('')
+    void invoke<SearchResult | null>('paper/resolve', {
+      paperId: paper.id,
+      referenceId,
+      refresh: attempt > 0,
+    })
       .then((value) => {
-        if (!cancelled) setResults(value)
+        if (!cancelled) setResult(value)
       })
       .catch((error) => {
         if (!cancelled) setError(error.message)
@@ -77,7 +81,7 @@ export function PaperPopover({
     return () => {
       cancelled = true
     }
-  }, [referenceId, paper.id])
+  }, [referenceId, paper.id, attempt])
   useEffect(
     () =>
       window.pepe?.onEvent((event) => {
@@ -96,7 +100,6 @@ export function PaperPopover({
     setBusy(action)
     setError('')
     try {
-      const result = results[candidate]
       const opened = await invoke<PaperRecord>('paper/download', {
         url: url || result?.pdfUrl,
         title: result?.title || reference?.title,
@@ -168,66 +171,103 @@ export function PaperPopover({
       {interaction.kind === 'citation' ? (
         <>
           {interaction.referenceIds.length > 1 && (
-            <select
-              aria-label="Choose citation"
-              value={referenceId}
-              onChange={(event) => setReferenceId(event.target.value)}
-            >
-              {interaction.referenceIds.map((id) => (
-                <option key={id} value={id}>
-                  {index?.references.find((r) => r.id === id)?.text}
-                </option>
-              ))}
-            </select>
-          )}
-          <h2>{reference?.title || 'Cited paper'}</h2>
-          <p className="citation-bibliography">{reference?.text}</p>
-          {busy === 'resolve' && <p className="muted">Looking for the full paper…</p>}
-          {results.length > 0 && (
-            <label className="candidate-label">
-              {results.length > 1 ? 'Choose a matching paper' : 'Available paper'}
-              <select
-                aria-label="Matching paper"
-                value={candidate}
-                onChange={(event) => setCandidate(Number(event.target.value))}
+            <nav className="citation-navigation" aria-label="Cited papers">
+              <button
+                className="icon-button"
+                aria-label="Previous citation"
+                disabled={
+                  interaction.referenceIds.indexOf(referenceId) === 0 ||
+                  (!!busy && busy !== 'resolve')
+                }
+                onClick={() =>
+                  setReferenceId(
+                    interaction.referenceIds[interaction.referenceIds.indexOf(referenceId) - 1],
+                  )
+                }
               >
-                {results.map((result, index) => (
-                  <option key={result.id} value={index}>
-                    {result.title} · {result.year}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <Icon name="left" size={15} />
+              </button>
+              <span>
+                {interaction.referenceIds.indexOf(referenceId) + 1} of{' '}
+                {interaction.referenceIds.length} references
+              </span>
+              <button
+                className="icon-button"
+                aria-label="Next citation"
+                disabled={
+                  interaction.referenceIds.indexOf(referenceId) ===
+                    interaction.referenceIds.length - 1 ||
+                  (!!busy && busy !== 'resolve')
+                }
+                onClick={() =>
+                  setReferenceId(
+                    interaction.referenceIds[interaction.referenceIds.indexOf(referenceId) + 1],
+                  )
+                }
+              >
+                <Icon name="right" size={15} />
+              </button>
+            </nav>
           )}
-          {(!results.length || !results[candidate]?.pdfUrl) && busy !== 'resolve' && (
-            <label className="candidate-label">
-              Direct PDF link
-              <input
-                aria-label="Citation PDF URL"
-                value={url}
-                placeholder="https://…/paper.pdf"
-                onChange={(event) => setUrl(event.target.value)}
-              />
-            </label>
+          <h2>{result?.title || reference?.title || 'Cited paper'}</h2>
+          {result && (
+            <p className="citation-match">
+              {result.authors && <span>{result.authors}</span>}
+              <span>{[result.year, result.source].filter(Boolean).join(' · ')}</span>
+            </p>
+          )}
+          <details className="citation-original">
+            <summary>Citation in this paper</summary>
+            <p className="citation-bibliography">{reference?.text}</p>
+          </details>
+          {busy === 'resolve' && (
+            <p className="muted" role="status">
+              Finding the cited paper…
+            </p>
+          )}
+          {!result?.pdfUrl && busy !== 'resolve' && (
+            <>
+              <p className="muted">
+                {result
+                  ? 'The paper was identified, but no public PDF was found.'
+                  : 'No confident match found for this citation.'}
+              </p>
+              <button
+                className="text-button"
+                onClick={() => setAttempt((value) => value + 1)}
+                disabled={!!busy}
+              >
+                Retry search
+              </button>
+              <details className="citation-original">
+                <summary>Use a PDF link</summary>
+                <input
+                  aria-label="Citation PDF URL"
+                  value={url}
+                  placeholder="https://…/paper.pdf"
+                  onChange={(event) => setUrl(event.target.value)}
+                />
+              </details>
+            </>
           )}
           <div className="popover-actions">
             <button
               className="secondary-button"
-              disabled={!!busy || (!url && !results[candidate]?.pdfUrl)}
+              disabled={!!busy || (!url && !result?.pdfUrl)}
               onClick={() => void citationAction('open')}
             >
               Open
             </button>
             <button
               className="secondary-button"
-              disabled={!!busy || (!url && !results[candidate]?.pdfUrl)}
+              disabled={!!busy || (!url && !result?.pdfUrl)}
               onClick={() => void citationAction('summary')}
             >
               Summarize
             </button>
             <button
               className="primary-button"
-              disabled={!!busy || (!url && !results[candidate]?.pdfUrl)}
+              disabled={!!busy || (!url && !result?.pdfUrl)}
               onClick={() => void citationAction('save')}
             >
               Download

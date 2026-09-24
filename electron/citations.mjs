@@ -1,6 +1,7 @@
 const markerPattern = /^(?:\[([\p{L}\d+ −–-]{1,24})\]|(\d{1,3})[.)])\s+(.+)/u
 const authorPattern =
-  /^(?:[\p{Lu}]\.\s*[\p{Lu}][\p{L}'’-]+|[\p{Lu}][\p{Ll}'’-]+\.\s|[\p{Lu}][\p{L}'’´-]+(?:,\s*[\p{Lu}]|\s+[\p{Lu}](?:\.|[\p{L}'’-]+)|\s+et al\.))/u
+  /^(?:[\p{Lu}]\.\s*[\p{Lu}][\p{L}'’-]+|[\p{Lu}][\p{Ll}'’-]+\.\s|[\p{Lu}][\p{L}'’´-]+(?:,\s*[\p{Lu}]|\s+[\p{Lu}](?:\.|(?=\s)|[\p{L}'’-]+)|\s+et al\.))/u
+export const CITATION_INDEX_VERSION = 3
 const years = /(?<![\d/])(?:19|20)\d{2}[a-z]?(?!\d|\.\d)/g
 const normalizedKey = (value) => value.replace(/\s+/g, '').toLowerCase()
 const isHeading = (text) =>
@@ -35,9 +36,11 @@ export function referenceTitle(text) {
     )
   if (!title) title = sentences[0] || cleaned
   return title
-    .split(/\.\s+(?:arXiv|https?:|CoRR)/)[0]
+    .split(/\.\s+(?:arXiv|https?:|CoRR)/i)[0]
     .replace(/^(?:19|20)\d{2}[a-z]?\.\s*/, '')
     .replace(/,\s*(?:19|20)\d{2}[a-z]?\.?$/, '')
+    .replace(/\s+arxiv\s*[,.:]?\s*$/i, '')
+    .replace(/[.\s]+$/, '')
     .slice(0, 300)
 }
 
@@ -57,6 +60,14 @@ export function extractReferences(pages) {
       current.year = [...body.matchAll(years)].at(-1)?.[0] || ''
       current.arxiv = arxivId(body)
       current.doi = body.match(/10\.\d{4,9}\/[^\s]+/)?.[0]?.replace(/[.,;)]+$/, '') || null
+      current.urls = [...new Set([...current.urls, ...(body.match(/https?:\/\/[^\s<>]+/g) || [])])]
+      current.arxiv ||=
+        current.urls
+          .filter((url) => /arxiv.org|10\.48550\/arxiv/i.test(url))
+          .map(arxivId)
+          .find(Boolean) || null
+      current.doi ||=
+        current.urls.map((url) => url.match(/10\.\d{4,9}\/[^\s]+/)?.[0]).find(Boolean) || null
       current.title = referenceTitle(current.text)
       const firstAuthor = body.split(/,|\s+and\s+|\s+et al\./)[0]
       current.surname =
@@ -140,8 +151,20 @@ export function extractReferences(pages) {
           page: page.number,
           line: line.id,
           y: line.y,
+          urls: [],
         }
       } else if (current) current.text += ' ' + text
+      if (current) {
+        for (const link of page.links || [])
+          if (
+            link.url &&
+            link.y < line.y + line.height + 0.004 &&
+            link.y + link.height > line.y - 0.004 &&
+            link.x < line.x + line.width + 0.01 &&
+            link.x + link.width > line.x - 0.01
+          )
+            current.urls.push(link.url)
+      }
     }
   }
   flush()

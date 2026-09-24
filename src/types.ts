@@ -74,6 +74,7 @@ export type Citation = {
   year: string
   arxiv?: string
   doi?: string
+  urls?: string[]
 }
 export type Line = {
   id: string

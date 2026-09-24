@@ -1,0 +1,48 @@
+{
+  "date": "2026-09-24T17:01:45.314Z",
+  "paper": "LeJEPA: Provable and Scalable Self-Supervised Learning Without the Heuristics",
+  "checks": [
+    {
+      "citation": "Ting Chen, Simon Kornblith, Mohammad Norouzi, and Geoffrey Hinton. A simple framework for contrastive learning of visual representations. In International conference on machine learning , pages 1597–1607. PmLR, 2020a.",
+      "title": "A Simple Framework for Contrastive Learning of Visual Representations",
+      "pdf": "https://arxiv.org/pdf/2002.05709",
+      "source": "arXiv",
+      "ms": 682,
+      "cachedMs": 0,
+      "cachedSame": true
+    },
+    {
+      "citation": "Mathilde Caron, Hugo Touvron, Ishan Misra, Hervé Jégou, Julien Mairal, Piotr Bojanowski, and Armand Joulin. Emerging properties in self-supervised vision transformers. In Proceedings of the IEEE/CVF international conference on computer vision , pages 9650–9660, 2021.",
+      "title": "Emerging Properties in Self-Supervised Vision Transformers",
+      "pdf": "https://arxiv.org/pdf/2104.14294",
+      "source": "arXiv",
+      "ms": 1449,
+      "cachedMs": 0,
+      "cachedSame": true
+    },
+    {
+      "citation": "Randall Balestriero, Mark Ibrahim, Vlad Sobal, Ari Morcos, Shashank Shekhar, Tom Goldstein, Florian Bordes, Adrien Bardes, Gregoire Mialon, Yuandong Tian, et al. A cookbook of self-supervised learning. arXiv preprint arXiv:2304.12210 , 2023.",
+      "title": "A cookbook of self-supervised learning",
+      "pdf": "https://arxiv.org/pdf/2304.12210",
+      "source": "arXiv",
+      "ms": 0,
+      "cachedMs": 0,
+      "cachedSame": true
+    }
+  ],
+  "desktopChecks": {
+    "paper": "User-downloaded LeJEPA PDF in World Model/Influential",
+    "page": 2,
+    "simclr": {
+      "singleMatch": true,
+      "openedPdf": true,
+      "clickToObservedResultMs": 1254
+    },
+    "dino": {
+      "singleMatch": true,
+      "clickToObservedResultMs": 1364,
+      "openedPdf": true
+    },
+    "homeShortcut": true
+  }
+}

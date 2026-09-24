@@ -44,19 +44,21 @@ function createWindow() {
       return
     const key = input.key.toLowerCase()
     const command =
-      key === 'l'
-        ? input.shift
-          ? 'toggle-paper'
-          : 'toggle-chat'
-        : key === 'o'
-          ? 'open-paper'
-          : key === '+' || key === '='
-            ? 'zoom-in'
-            : key === '-'
-              ? 'zoom-out'
-              : key === '0'
-                ? 'reset-zoom'
-                : null
+      key === 'h' && input.shift
+        ? 'go-home'
+        : key === 'l'
+          ? input.shift
+            ? 'toggle-paper'
+            : 'toggle-chat'
+          : key === 'o'
+            ? 'open-paper'
+            : key === '+' || key === '='
+              ? 'zoom-in'
+              : key === '-'
+                ? 'zoom-out'
+                : key === '0'
+                  ? 'reset-zoom'
+                  : null
     if (command) {
       // Consume the event once, before either Chromium or the native menu can handle it.
       event.preventDefault()
@@ -156,6 +158,11 @@ app.whenReady().then(async () => {
         label: 'File',
         submenu: [
           { label: 'Open paper…', accelerator: 'CmdOrCtrl+O', click: () => send('open-paper') },
+          {
+            label: 'Home / library',
+            accelerator: 'CmdOrCtrl+Shift+H',
+            click: () => send('go-home'),
+          },
           { type: 'separator' },
           { role: 'close' },
         ],

@@ -3,6 +3,8 @@ import { invoke } from './api'
 import { Icon } from './Icons'
 import { Answer } from './Answer'
 import { SettingsPanel } from './SettingsPanel'
+import { FolderTree, folderName, managedFolder, parentFolder } from './FolderTree'
+import { useSummarySize } from './SummaryResize'
 import type { LibraryState, PaperRecord, SearchResult, Settings, Source } from './types'
 
 export function Dashboard({
@@ -26,21 +28,23 @@ export function Dashboard({
 }) {
   const [tab, setTab] = useState<'saved' | 'search' | 'citations'>('saved'),
     [query, setQuery] = useState(''),
-    [folder, setFolder] = useState('all'),
+    [folder, setFolder] = useState<string | null>(null),
     [selected, setSelected] = useState('')
   const [results, setResults] = useState<SearchResult[]>([]),
     [busy, setBusy] = useState(''),
     [problem, setProblem] = useState(''),
     [settingsOpen, setSettingsOpen] = useState(false)
   const [dialog, setDialog] = useState<'download' | 'folder' | 'rename' | null>(null),
-    [value, setValue] = useState('')
+    [value, setValue] = useState(''),
+    [folderParent, setFolderParent] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
+  const summarySize = useSummarySize()
   const papers = library.papers
     .filter(
       (p) =>
         (p.saved || historyOpen) &&
         (tab !== 'citations' || p.citedBy.length || p.folder === 'citations') &&
-        (folder === 'all' || p.folder === folder) &&
+        (folder === null || p.folder === folder) &&
         `${p.title} ${p.author} ${p.filename} ${p.searchText || ''}`
           .toLowerCase()
           .includes(query.toLowerCase()),
@@ -66,7 +70,7 @@ export function Dashboard({
         url: result.pdfUrl,
         title: result.title,
         save,
-        folder: folder === 'all' ? '' : folder,
+        folder: folder || '',
       })
       if (!save) onOpen(paper)
       else setSelected(paper.id)
@@ -86,6 +90,7 @@ export function Dashboard({
             className="secondary-button"
             onClick={() => {
               setValue('')
+              setProblem('')
               setDialog('download')
             }}
           >
@@ -110,7 +115,7 @@ export function Dashboard({
               onClick={() => {
                 setTab(item)
                 setQuery('')
-                setFolder('all')
+                setFolder(null)
               }}
             >
               {item === 'saved' ? 'Your papers' : item === 'search' ? 'Discover' : 'Citations'}
@@ -146,7 +151,7 @@ export function Dashboard({
           {problem || error}
         </p>
       )}
-      <div className="library-layout">
+      <div className="library-layout" ref={summarySize.layout} style={summarySize.style}>
         <aside className="folder-list">
           <div className="section-heading">
             <span className="section-label">FOLDERS</span>
@@ -156,30 +161,33 @@ export function Dashboard({
               aria-label="New folder"
               onClick={() => {
                 setValue('')
+                setProblem('')
+                setFolderParent(folder && !managedFolder(folder) ? folder : '')
                 setDialog('folder')
               }}
             >
               <Icon name="plus" size={15} />
             </button>
           </div>
-          <button className={folder === 'all' ? 'active' : ''} onClick={() => setFolder('all')}>
+          <button className={folder === null ? 'active' : ''} onClick={() => setFolder(null)}>
             All papers<span>{library.papers.filter((p) => p.saved).length}</span>
           </button>
-          {library.folders.map((name) => (
-            <button
-              key={name}
-              className={folder === name ? 'active' : ''}
-              onClick={() => setFolder(name)}
-            >
-              <span>{name || 'Unfiled'}</span>
-              {name === 'citations' && <span>↗</span>}
-            </button>
-          ))}
-          {folder !== 'all' && folder && folder !== 'citations' && (
+          <button className={folder === '' ? 'active' : ''} onClick={() => setFolder('')}>
+            Unfiled
+          </button>
+          <FolderTree
+            key={library.root}
+            folders={library.folders}
+            selected={folder}
+            onSelect={setFolder}
+          />
+          {folder && !managedFolder(folder) && (
             <div className="folder-tools">
               <button
                 onClick={() => {
-                  setValue(folder)
+                  setValue(folderName(folder))
+                  setFolderParent(parentFolder(folder))
+                  setProblem('')
                   setDialog('rename')
                 }}
               >
@@ -189,7 +197,7 @@ export function Dashboard({
                 onClick={() =>
                   void task('folder', async () => {
                     await invoke('library/folder', { operation: 'remove', name: folder })
-                    setFolder('all')
+                    setFolder(parentFolder(folder) || null)
                   })
                 }
               >
@@ -201,7 +209,14 @@ export function Dashboard({
             <button onClick={() => void task('refresh', () => invoke('library/refresh'))}>
               {busy === 'refresh' ? 'Refreshing…' : 'Refresh library'}
             </button>
-            <button onClick={() => void task('root', () => invoke('library/root'))}>
+            <button
+              onClick={() =>
+                void task('root', async () => {
+                  await invoke('library/root')
+                  setFolder(null)
+                })
+              }
+            >
               Choose library folder
             </button>
             <p title={library.root}>{library.root || 'Open the desktop app for a local library'}</p>
@@ -318,105 +333,110 @@ export function Dashboard({
           )}
         </section>
         {current && tab !== 'search' && (
-          <aside className="quick-summary">
-            <span className="eyebrow">A CLOSER LOOK</span>
-            <h2>{current.title}</h2>
-            <div className="quick-actions">
-              <button className="primary-button" onClick={() => onOpen(current)}>
-                Read paper
-              </button>
-              {!current.saved && (
-                <button
-                  className="secondary-button"
-                  disabled={!!busy}
-                  onClick={() =>
-                    void task('save', () =>
-                      invoke('paper/save', {
-                        id: current.id,
-                        folder: folder === 'all' ? '' : folder,
-                      }),
-                    )
-                  }
-                >
-                  Save to library
+          <aside className="quick-summary" aria-label="Paper summary">
+            {summarySize.resize}
+            <div className="summary-content">
+              <span className="eyebrow">A CLOSER LOOK</span>
+              <h2>{current.title}</h2>
+              <div className="quick-actions">
+                <button className="primary-button" onClick={() => onOpen(current)}>
+                  Read paper
                 </button>
+                {!current.saved && (
+                  <button
+                    className="secondary-button"
+                    disabled={!!busy}
+                    onClick={() =>
+                      void task('save', () =>
+                        invoke('paper/save', {
+                          id: current.id,
+                          folder: folder || '',
+                        }),
+                      )
+                    }
+                  >
+                    Save to library
+                  </button>
+                )}
+              </div>
+              {current.saved && !current.citedBy.length && (
+                <label className="move-label">
+                  Folder
+                  <select
+                    aria-label="Move paper to folder"
+                    value={current.folder}
+                    onChange={(event) =>
+                      void task('move', () =>
+                        invoke('paper/move', { id: current.id, folder: event.target.value }),
+                      )
+                    }
+                  >
+                    {library.folders
+                      .filter((name) => !managedFolder(name))
+                      .map((name) => (
+                        <option key={name} value={name}>
+                          {name || 'Unfiled'}
+                        </option>
+                      ))}
+                  </select>
+                </label>
               )}
-            </div>
-            {current.saved && !current.citedBy.length && (
-              <label className="move-label">
-                Folder
+              {current.citedBy.length > 0 && (
+                <p className="muted">
+                  Cited by{' '}
+                  {current.citedBy
+                    .map((id) => library.papers.find((p) => p.id === id)?.title || 'another paper')
+                    .join(', ')}
+                </p>
+              )}
+              <div className="summary-heading">
+                <h3>Quick summary</h3>
                 <select
-                  aria-label="Move paper to folder"
-                  value={current.folder}
+                  aria-label="Quick summary format"
+                  value={library.settings.summaryFormat}
                   onChange={(event) =>
-                    void task('move', () =>
-                      invoke('paper/move', { id: current.id, folder: event.target.value }),
-                    )
+                    void invoke<Settings>('settings/save', {
+                      summaryFormat: event.target.value,
+                    }).then(onSettings)
                   }
                 >
-                  {library.folders
-                    .filter((name) => name !== 'citations')
-                    .map((name) => (
-                      <option key={name} value={name}>
-                        {name || 'Unfiled'}
-                      </option>
-                    ))}
+                  <option value="bullets">Bullets</option>
+                  <option value="paragraph">Paragraph</option>
                 </select>
-              </label>
-            )}
-            {current.citedBy.length > 0 && (
-              <p className="muted">
-                Cited by{' '}
-                {current.citedBy
-                  .map((id) => library.papers.find((p) => p.id === id)?.title || 'another paper')
-                  .join(', ')}
-              </p>
-            )}
-            <div className="summary-heading">
-              <h3>Quick summary</h3>
-              <select
-                aria-label="Quick summary format"
-                value={library.settings.summaryFormat}
-                onChange={(event) =>
-                  void invoke<Settings>('settings/save', {
-                    summaryFormat: event.target.value,
-                  }).then(onSettings)
-                }
-              >
-                <option value="bullets">Bullets</option>
-                <option value="paragraph">Paragraph</option>
-              </select>
-            </div>
-            {summary?.text ? (
-              <Answer
-                text={summary.text}
-                sources={summary.sources}
-                onSource={(source) => onSource(current, source)}
-              />
-            ) : (
-              <>
-                <p className="muted">
+              </div>
+              {summary?.text && (
+                <Answer
+                  text={summary.text}
+                  sources={summary.sources}
+                  onSource={(source) => onSource(current, source)}
+                />
+              )}
+              {(summary?.status === 'working' || !summary?.text) && (
+                <p className="muted" role={summary?.status === 'working' ? 'status' : undefined}>
                   {summary?.status === 'working'
-                    ? 'Reading and summarizing in the background…'
+                    ? summary.text
+                      ? 'Updating summary…'
+                      : 'Reading and summarizing in the background…'
                     : 'Get the question, method, and main findings at a glance.'}
                 </p>
-                {summary?.error && <p className="inline-error">{summary.error}</p>}
-                <button
-                  className="secondary-button"
-                  disabled={summary?.status === 'working' || !!busy}
-                  onClick={() =>
-                    void task('summary', () =>
-                      invoke('paper/summary', {
-                        id: current.id,
-                        format: library.settings.summaryFormat,
-                      }),
-                    )
-                  }
-                >
-                  Summarize paper
-                </button>
-              </>
-            )}
+              )}
+              {summary?.error && <p className="inline-error">{summary.error}</p>}
+              <button
+                className={summary?.text ? 'text-button summary-regenerate' : 'secondary-button'}
+                disabled={summary?.status === 'working' || !!busy}
+                onClick={() =>
+                  void task('summary', () =>
+                    invoke('paper/summary', {
+                      id: current.id,
+                      format: library.settings.summaryFormat,
+                      force: !!summary?.text,
+                    }),
+                  )
+                }
+              >
+                {summary?.text ? 'Regenerate summary' : 'Summarize paper'}
+              </button>
+            </div>
           </aside>
         )}
       </div>
@@ -454,16 +474,29 @@ export function Dashboard({
                   const paper = await invoke<PaperRecord>('paper/download', {
                     url: value,
                     save: true,
-                    folder: folder === 'all' ? '' : folder,
+                    folder: folder || '',
                   })
                   setSelected(paper.id)
                 } else {
+                  const name = value.trim()
+                  const parts = name.split('/')
+                  if (
+                    parts.some(
+                      (part) => !part.trim() || part.startsWith('.') || part.includes('\0'),
+                    )
+                  )
+                    throw new Error(
+                      'Use visible folder names separated by /, without empty, . or .. parts.',
+                    )
+                  if (dialog === 'rename' && parts.length !== 1)
+                    throw new Error('Enter a single folder name to keep it in its current parent.')
+                  const destination = [folderParent, name].filter(Boolean).join('/')
                   await invoke('library/folder', {
                     operation: dialog === 'folder' ? 'create' : 'rename',
-                    name: dialog === 'folder' ? value : folder,
-                    next: value,
+                    name: dialog === 'folder' ? destination : folder,
+                    next: destination,
                   })
-                  if (dialog === 'rename') setFolder(value)
+                  setFolder(destination)
                 }
                 setDialog(null)
               })
@@ -476,6 +509,24 @@ export function Dashboard({
                   ? 'A home for related ideas.'
                   : 'Rename folder'}
             </h2>
+            {dialog === 'folder' && (
+              <label>
+                Parent folder
+                <select
+                  aria-label="Parent folder"
+                  value={folderParent}
+                  onChange={(event) => setFolderParent(event.target.value)}
+                >
+                  {library.folders
+                    .filter((name) => !managedFolder(name))
+                    .map((name) => (
+                      <option key={name} value={name}>
+                        {name ? name.split('/').join(' / ') : 'Library root'}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            )}
             <label>
               {dialog === 'download' ? 'PDF URL or arXiv ID' : 'Folder name'}
               <input
@@ -489,6 +540,19 @@ export function Dashboard({
                 }
               />
             </label>
+            {dialog !== 'download' && (
+              <div className="folder-location">
+                {dialog === 'folder' && (
+                  <p>Use / to create several levels, e.g. AI/Transformers/Attention.</p>
+                )}
+                <span>{dialog === 'folder' ? 'Folder location' : 'New location'}</span>
+                <p>
+                  {[library.root, folderParent, value.trim() || 'New folder']
+                    .filter(Boolean)
+                    .join('/')}
+                </p>
+              </div>
+            )}
             {problem && (
               <p role="alert" className="inline-error">
                 {problem}

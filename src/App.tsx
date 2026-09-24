@@ -9,6 +9,7 @@ import { usePaper } from './usePaper'
 import { Dashboard } from './Dashboard'
 import { ChatPanel } from './ChatPanel'
 import { PaperPopover } from './PaperPopover'
+import { PaperSummary } from './PaperSummary'
 import { invoke } from './api'
 import type { LibraryState, PaperIndex, PaperRecord, Settings, Source } from './types'
 
@@ -163,19 +164,28 @@ export function App() {
     [],
   )
   const setTone = useCallback((tone: Tone) => setPreferences((value) => ({ ...value, tone })), [])
+  const home = useCallback(() => {
+    pendingSource.current = null
+    close()
+    setPanel(null)
+    setInteraction(null)
+    setBackStack([])
+    refresh()
+  }, [close, refresh])
   const runCommand = useCallback(
     (command: ReaderCommand) => {
       if (command === 'toggle-chat') toggleChat()
       if (command === 'toggle-paper' && paper)
         setPanel((current) => (current === 'paper' ? null : 'paper'))
       if (command === 'open-paper') openChooser()
+      if (command === 'go-home') home()
       if (command === 'zoom-in')
         setPreferences((value) => ({ ...value, width: Math.min(1600, value.width + 80) }))
       if (command === 'zoom-out')
         setPreferences((value) => ({ ...value, width: Math.max(480, value.width - 80) }))
       if (command === 'reset-zoom') setWidth(880)
     },
-    [toggleChat, paper, openChooser, setWidth],
+    [toggleChat, paper, openChooser, setWidth, home],
   )
   useEffect(() => window.pepe?.onCommand(runCommand), [runCommand])
   useEffect(() => {
@@ -194,19 +204,21 @@ export function App() {
       if (!(isMac ? event.metaKey : event.ctrlKey)) return
       const key = event.key.toLowerCase(),
         command: ReaderCommand | undefined =
-          key === 'l'
-            ? event.shiftKey
-              ? 'toggle-paper'
-              : 'toggle-chat'
-            : key === 'o'
-              ? 'open-paper'
-              : key === '+' || key === '='
-                ? 'zoom-in'
-                : key === '-'
-                  ? 'zoom-out'
-                  : key === '0'
-                    ? 'reset-zoom'
-                    : undefined
+          key === 'h' && event.shiftKey
+            ? 'go-home'
+            : key === 'l'
+              ? event.shiftKey
+                ? 'toggle-paper'
+                : 'toggle-chat'
+              : key === 'o'
+                ? 'open-paper'
+                : key === '+' || key === '='
+                  ? 'zoom-in'
+                  : key === '-'
+                    ? 'zoom-out'
+                    : key === '0'
+                      ? 'reset-zoom'
+                      : undefined
       if (command) {
         event.preventDefault()
         runCommand(command)
@@ -251,12 +263,6 @@ export function App() {
     },
     [paper],
   )
-  const home = () => {
-    close()
-    setPanel(null)
-    setInteraction(null)
-    refresh()
-  }
   return (
     <div
       className={`app ${panel && paper ? 'has-panel' : ''}`}
@@ -346,6 +352,7 @@ export function App() {
             tab={panel}
             setTab={setPanel}
             onClose={closePanel}
+            onHome={home}
             paper={paper}
             page={page}
             goToPage={goToPage}
@@ -361,11 +368,21 @@ export function App() {
             setTone={setTone}
             commandKey={commandKey}
             loading={loading}
+            summary={
+              record ? (
+                <PaperSummary
+                  key={record.id}
+                  paper={record}
+                  onRefresh={refresh}
+                  onSource={(source) => {
+                    onSource(source)
+                    closePanel()
+                  }}
+                />
+              ) : null
+            }
             actions={
               <div className="reader-actions">
-                <button className="secondary-button" onClick={home}>
-                  ← Your library
-                </button>
                 {record && !record.saved && (
                   <button
                     className="secondary-button"

@@ -147,21 +147,54 @@ test('library mutations are persistent, collision safe, and confined to ordinary
   await copyFile(sample, external)
   const paper = await library.register(external)
   await library.index(paper.id)
-  await library.folder('create', 'Learning/Transformers')
+  await library.folder('create', 'Learning/Transformers/Attention/Self-attention')
+  assert.deepEqual(
+    (await library.folders()).filter((path) => path.startsWith('Learning')),
+    [
+      'Learning',
+      'Learning/Transformers',
+      'Learning/Transformers/Attention',
+      'Learning/Transformers/Attention/Self-attention',
+    ],
+  )
   await Promise.all([
-    library.save(paper.id, 'Learning/Transformers'),
-    library.save(paper.id, 'Learning/Transformers'),
+    library.save(paper.id, 'Learning/Transformers/Attention/Self-attention'),
+    library.save(paper.id, 'Learning/Transformers/Attention/Self-attention'),
   ])
-  assert.equal((await readdir(join(library.data.root, 'Learning/Transformers'))).length, 1)
+  assert.equal(
+    (await readdir(join(library.data.root, 'Learning/Transformers/Attention/Self-attention')))
+      .length,
+    1,
+  )
   await library.folder('rename', 'Learning', 'Research')
-  assert.equal(library.publicRecord(library.record(paper.id)).folder, 'Research/Transformers')
+  assert.equal(
+    library.publicRecord(library.record(paper.id)).folder,
+    'Research/Transformers/Attention/Self-attention',
+  )
+  await library.folder('rename', 'Research/Transformers', 'Research/Architectures')
+  assert.equal(
+    library.publicRecord(library.record(paper.id)).folder,
+    'Research/Architectures/Attention/Self-attention',
+  )
+  await assert.rejects(library.folder('remove', 'Research/Architectures'), /ENOTEMPTY/)
+  await assert.rejects(
+    library.folder('remove', 'Research/Architectures/Attention/Self-attention'),
+    /ENOTEMPTY/,
+  )
   await library.move(paper.id, '')
+  await library.folder('remove', 'Research/Architectures/Attention/Self-attention')
+  assert.ok((await library.folders()).includes('Research/Architectures/Attention'))
   await assert.rejects(library.folder('remove', '.'), /ordinary subfolder/)
   await assert.rejects(
     library.folder('rename', 'Research', 'citations/../.'),
     /folder name|ordinary subfolder/,
   )
   await assert.rejects(library.safeFolder('../escape'), /inside/)
+  await assert.rejects(library.folder('create', 'Research/../../../escape'), /inside/)
+  await assert.rejects(
+    library.folder('create', 'citations/Attention/Details'),
+    /managed automatically/,
+  )
   await symlink(base, join(library.data.root, 'escape'))
   await assert.rejects(library.safeFolder('escape/other'), /outside/)
   const cached = library.record(paper.id)
@@ -290,7 +323,10 @@ test('Codex protocol streams, resumes, cancels, forks, summarizes, and persists 
     research.summarize(paper.id, 'bullets'),
   ])
   assert.equal(bulletA.text, bulletB.text)
-  assert.match(bulletA.text, /^-/)
+  assert.match(bulletA.text, /^- \*\*Problem\*\*/)
+  assert.match(bulletA.text, /^  - /m)
+  assert.match(bulletA.text, /^    - /m)
+  assert.equal((await research.summarize(paper.id, 'bullets')).text, bulletA.text)
   const paragraph = await research.summarize(paper.id, 'paragraph')
   assert.ok(!paragraph.text.startsWith('-'))
   const requests = (await readFile(join(base, 'rpc.jsonl'), 'utf8'))
@@ -310,8 +346,9 @@ test('Codex protocol streams, resumes, cancels, forks, summarizes, and persists 
     ),
   )
   assert.equal(
-    turns.filter((r) => r.params.input.some((i) => i.text?.includes('five concise bullet points')))
-      .length,
+    turns.filter((r) =>
+      r.params.input.some((i) => i.text?.includes('compact, hierarchical Markdown outline')),
+    ).length,
     1,
   )
   await library.writeQueue
@@ -337,5 +374,79 @@ test('Codex protocol streams, resumes, cancels, forks, summarizes, and persists 
   const deadline = Date.now() + 8000
   while (!library.record(downloaded.id).summary.bullets?.text && Date.now() < deadline)
     await new Promise((resolve) => setTimeout(resolve, 30))
-  assert.match(library.record(downloaded.id).summary.bullets?.text || '', /^- The Transformer/)
+  assert.match(library.record(downloaded.id).summary.bullets?.text || '', /^- \*\*Problem\*\*/)
+})
+
+test('summary regeneration replaces a cached outline once and preserves it on failure', async (t) => {
+  const { library } = await libraryFixture(t)
+  const paper = await library.register(sample)
+  await library.index(paper.id)
+  const record = library.record(paper.id)
+  const previous = {
+    status: 'ready',
+    text: '- An old, long section summary.',
+    sources: [],
+  }
+  record.summary.bullets = previous
+  record.summary.paragraph = { status: 'ready', text: 'Keep the paragraph unchanged.' }
+  const codex = new EventEmitter()
+  codex.status = async () => ({
+    connected: true,
+    models: [{ id: 'gpt-6-astra', efforts: ['medium'] }],
+  })
+  let finish,
+    fail,
+    calls = 0,
+    prompt = '',
+    started = Promise.withResolvers()
+  codex.answer = async ({ text }) => {
+    calls++
+    prompt = text
+    started.resolve()
+    return new Promise((resolve, reject) => {
+      finish = resolve
+      fail = reject
+    })
+  }
+  const research = new Research(library, codex, () => {})
+  t.after(() => research.close())
+  assert.equal(await research.summarize(paper.id, 'bullets'), previous)
+  assert.equal(calls, 0)
+  const first = research.summarize(paper.id, 'bullets', true)
+  const concurrent = research.summarize(paper.id, 'bullets', true)
+  assert.equal(record.summary.bullets.status, 'working')
+  assert.equal(record.summary.bullets.text, previous.text)
+  await started.promise
+  assert.equal(calls, 1)
+  assert.match(prompt, /Each child expresses ONE idea/)
+  assert.match(prompt, /two spaces per level/)
+  const outline =
+    '- **Method**\n  - Uses attention. [p. 4](paper://page/4#line=p4-l15)\n    - Combines weighted values.'
+  finish({ text: outline })
+  const updated = await first
+  assert.equal((await concurrent).text, outline)
+  assert.equal(updated.status, 'ready')
+  assert.equal(updated.sources[0].line, 'p4-l15')
+  assert.equal(record.summary.paragraph.text, 'Keep the paragraph unchanged.')
+
+  started = Promise.withResolvers()
+  const failed = research.summarize(paper.id, 'bullets', true)
+  const rejection = assert.rejects(failed, /Temporarily unavailable/)
+  await started.promise
+  fail(new Error('Temporarily unavailable'))
+  await rejection
+  assert.equal(record.summary.bullets.status, 'error')
+  assert.equal(record.summary.bullets.text, outline)
+  assert.deepEqual(record.summary.bullets.sources, updated.sources)
+  assert.equal(record.summary.paragraph.text, 'Keep the paragraph unchanged.')
+
+  research.close()
+  record.summary.bullets = { ...updated, status: 'working' }
+  const restarted = new Research(library, codex, () => {})
+  t.after(() => restarted.close())
+  assert.equal(record.summary.bullets.status, 'ready')
+  assert.equal(record.summary.bullets.text, outline)
+  await library.writeQueue
+  const persisted = JSON.parse(await readFile(library.file, 'utf8'))
+  assert.equal(persisted.papers[0].summary.bullets.status, 'ready')
 })

@@ -1,5 +1,24 @@
 import { randomUUID } from 'node:crypto'
 
+const bulletSummaryInstructions = `Summarize the paper as a compact, hierarchical Markdown outline.
+- Organize the summary into 3–6 meaningful topic groups, covering the problem, method, main findings, and limitations when supported by the paper.
+- Each top-level bullet is a short bold topic label, not a sentence summarizing an entire section.
+- Put 2–4 short child bullets under each topic. Each child expresses ONE idea in a short phrase or sentence; aim for 6–14 words, excluding source links.
+- Split compound sentences into separate sibling bullets. Do not pack a section into one long bullet using commas or semicolons.
+- Add a third level only when a mechanism, result, or caveat genuinely needs supporting details. Keep causes, evidence, and qualifications under the specific idea they explain.
+- Use real Markdown nesting: two spaces per level, and a separate line for every bullet. Use at least two levels, at most three.
+- Preserve important numbers, units, comparisons, and uncertainty. Do not shorten a claim so much that its meaning changes, or pad a group with unsupported details.
+- Put precise paper:// source links next to the specific child or leaf claim they support, not on topic labels. If only partial content is available, include a short coverage caveat.
+- Return only the outline, without an introduction, conclusion paragraph, or code fence. Keep the overall summary compact.
+Structure example (replace every placeholder with content from this paper):
+- **Method**
+  - One short idea.
+    - A supporting mechanism, only if needed.
+  - Another distinct idea.
+- **Findings**
+  - A concrete result, with its comparison.
+  - A separate qualification.`
+
 export function paperContext(index, query = '', focusPage) {
   const terms = new Set(query.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || [])
   const ranked = index.pages
@@ -52,6 +71,15 @@ export class Research {
     this.foreground = 0
     this.activeChats = new Set()
     this.cancelled = new Set()
+    let recoveredSummary = false
+    for (const paper of library.data.papers)
+      for (const summary of Object.values(paper.summary || {}))
+        if (summary.status === 'working' && summary.text) {
+          // An interrupted regeneration must not leave the saved summary disabled after restart.
+          summary.status = 'ready'
+          recoveredSummary = true
+        }
+    if (recoveredSummary) library.changed()
     for (const chat of library.data.chats) delete chat.activeRequestId
     library.on('saved', (id) => {
       if (library.record(id).downloaded) this.queueSummary(id)
@@ -259,16 +287,18 @@ export class Research {
       }
     }
   }
-  async summarize(id, format = this.library.data.settings.summaryFormat) {
+  async summarize(id, format = this.library.data.settings.summaryFormat, force = false) {
     if (!['bullets', 'paragraph'].includes(format))
       throw new Error('Choose bullets or paragraph for the summary.')
     const key = `${id}:${format}`,
       paper = this.library.record(id)
-    if (paper.summary?.[format]?.text) return paper.summary[format]
     if (this.summaries.has(key)) return this.summaries.get(key)
+    if (!force && paper.summary?.[format]?.text) return paper.summary[format]
     const task = (async () => {
       paper.summary ||= {}
-      paper.summary[format] = { status: 'working' }
+      const previous = paper.summary[format]
+      const previousSignature = paper.signature
+      paper.summary[format] = { ...previous, status: 'working', error: undefined }
       this.library.changed()
       try {
         const status = await this.codex.status()
@@ -281,7 +311,7 @@ export class Research {
         const signature = paper.signature
         const result = await this.codex.answer({
           requestId: randomUUID(),
-          text: `${paperContext(index, 'abstract methods results limitations conclusion')}\nSummarize the paper in ${format === 'paragraph' ? 'one concise paragraph' : 'five concise bullet points'}. Cover the problem, method, results, and limitations. Cite source lines using paper:// links. If only partial content is available, say so.`,
+          text: `${paperContext(index, 'abstract methods results limitations conclusion')}\n${format === 'paragraph' ? 'Summarize the paper in one concise paragraph. Cover the problem, method, results, and limitations. Cite source lines using paper:// links. If only partial content is available, say so.' : bulletSummaryInstructions}`,
           settings,
         })
         if (paper.signature !== signature)
@@ -297,7 +327,11 @@ export class Research {
         }
         return paper.summary[format]
       } catch (error) {
-        paper.summary[format] = { status: 'error', error: error.message }
+        paper.summary[format] = {
+          ...(paper.signature === previousSignature ? previous : undefined),
+          status: 'error',
+          error: error.message,
+        }
         throw error
       } finally {
         this.library.changed()

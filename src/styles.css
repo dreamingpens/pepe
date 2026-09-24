@@ -329,6 +329,42 @@ kbd {
   color: var(--muted);
   margin: 0 0 26px;
 }
+.paper-summary {
+  margin: 0 0 26px;
+  padding: 16px 0 20px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.paper-summary summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 500;
+}
+.paper-summary summary::-webkit-details-marker {
+  display: none;
+}
+.paper-summary summary svg {
+  color: var(--muted);
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
+.paper-summary details[open] > summary {
+  margin-bottom: 16px;
+}
+.paper-summary details[open] > summary svg {
+  transform: none;
+}
+.paper-summary .answer-markdown {
+  font-size: 12px;
+}
+.paper-summary .answer-markdown > ul {
+  margin: 0;
+}
 .open-button {
   width: 100%;
   display: flex;
@@ -1064,7 +1100,10 @@ input::-webkit-outer-spin-button {
   overflow: hidden;
 }
 .library-layout:has(.quick-summary) {
-  grid-template-columns: 165px minmax(250px, 1fr) 320px;
+  grid-template-columns: 165px minmax(250px, 1fr) minmax(
+      280px,
+      min(var(--summary-width, 380px), calc(100vw - 567px))
+    );
 }
 .folder-list {
   display: flex;
@@ -1083,12 +1122,59 @@ input::-webkit-outer-spin-button {
   text-align: left;
   overflow-wrap: anywhere;
 }
-.folder-list > button.active {
+.folder-list > button.active,
+.folder-row.active {
   background: var(--hover);
   color: var(--text);
 }
 .folder-list > button > span:first-child {
   overflow: hidden;
+  text-overflow: ellipsis;
+}
+.folder-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-shrink: 0;
+}
+.folder-tree .folder-tree {
+  margin-left: 10px;
+  padding-left: 5px;
+  border-left: 1px solid var(--line);
+}
+.folder-row {
+  display: flex;
+  align-items: center;
+  min-width: 100px;
+  border-radius: 4px;
+  color: var(--muted);
+}
+.folder-toggle,
+.folder-toggle-spacer {
+  width: 21px;
+  flex-shrink: 0;
+}
+.folder-toggle {
+  display: grid;
+  place-items: center;
+  padding: 10px 0;
+  color: inherit;
+}
+.folder-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 9px 10px 0;
+  font-size: 11px;
+  text-align: left;
+  color: inherit;
+}
+.folder-select > span:first-child {
+  overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
 }
 .folder-tools {
@@ -1209,12 +1295,55 @@ input::-webkit-outer-spin-button {
   margin: 0 0 24px;
 }
 .quick-summary {
+  position: relative;
+  min-width: 0;
   min-height: 0;
-  overflow: auto;
-  padding: 20px 22px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 7px;
+}
+.summary-content {
+  height: 100%;
+  overflow: auto;
+  padding: 20px 22px;
+}
+.summary-resize {
+  position: absolute;
+  z-index: 1;
+  left: -16px;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.summary-resize::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: calc(50% - 22px);
+  height: 44px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--line);
+}
+.summary-resize:hover::after,
+.summary-resize:focus-visible::after {
+  background: var(--accent);
+}
+.panel-home {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 26px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.panel-home kbd {
+  margin-left: auto;
+  color: var(--muted);
 }
 .quick-summary h2 {
   font:
@@ -1248,6 +1377,9 @@ input::-webkit-outer-spin-button {
   background: transparent;
   color: var(--muted);
   border: none;
+}
+.summary-regenerate {
+  margin-top: 12px;
 }
 .move-label {
   display: flex;
@@ -1351,12 +1483,26 @@ select,
   font-size: 12px;
   color: var(--muted);
 }
-.simple-modal input {
+.simple-modal input,
+.simple-modal select {
   padding: 12px;
   color: var(--text);
   background: var(--field);
   border: 1px solid var(--line);
   margin: 3px 0 20px;
+}
+.folder-location {
+  margin: -6px 0 22px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.folder-location p {
+  margin: 3px 0 12px;
+}
+.folder-location > span {
+  color: var(--text);
 }
 .modal-actions {
   display: flex;
@@ -1482,6 +1628,18 @@ select,
 .answer-markdown li {
   padding-left: 2px;
   margin: 8px 0;
+}
+.answer-markdown li > ul,
+.answer-markdown li > ol {
+  margin: 5px 0 0;
+  padding-left: 17px;
+}
+.answer-markdown li li {
+  margin: 5px 0;
+  line-height: 1.65;
+}
+.answer-markdown li > p {
+  margin: 5px 0;
 }
 .answer-markdown h1,
 .answer-markdown h2,
@@ -1613,6 +1771,37 @@ select,
   gap: 8px;
   margin: 18px 0 6px;
 }
+.citation-navigation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.citation-match {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.citation-original {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 14px 0;
+}
+.citation-original summary {
+  cursor: pointer;
+}
+.citation-original input {
+  width: 100%;
+  padding: 9px;
+  margin-top: 10px;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--line);
+}
 @keyframes breathing {
   from {
     opacity: 0.25;
@@ -1634,6 +1823,8 @@ select,
   .library-layout,
   .library-layout:has(.quick-summary) {
     grid-template-columns: 135px minmax(230px, 1fr);
+    grid-auto-rows: max-content;
+    align-content: start;
     padding: 24px 28px;
     overflow: auto;
   }
@@ -1642,8 +1833,22 @@ select,
   }
   .quick-summary {
     grid-column: 2;
-    min-height: 300px;
-    overflow: visible;
+    height: var(--summary-height, 520px);
+    margin-bottom: 14px;
+  }
+  .summary-resize {
+    top: auto;
+    bottom: -16px;
+    left: 0;
+    width: 100%;
+    height: 16px;
+    cursor: row-resize;
+  }
+  .summary-resize::after {
+    top: 7px;
+    left: calc(50% - 22px);
+    width: 44px;
+    height: 3px;
   }
   .folder-list {
     grid-row: span 2;

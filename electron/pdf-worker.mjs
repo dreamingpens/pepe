@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import { createCanvas } from '@napi-rs/canvas'
-import { enrichIndex } from './citations.mjs'
+import { enrichIndex, CITATION_INDEX_VERSION } from './citations.mjs'
 
 const require = createRequire(import.meta.url)
 const pdfRoot = dirname(require.resolve('pdfjs-dist/package.json'))
@@ -123,7 +123,7 @@ export async function indexPdf(path) {
       .join(', ')
       .slice(0, 1500)
     return enrichIndex({
-      version: 2,
+      version: CITATION_INDEX_VERSION,
       title: metadata.info.Title?.trim() || inferredTitle,
       author: metadata.info.Author?.trim() || inferredAuthors,
       pages,

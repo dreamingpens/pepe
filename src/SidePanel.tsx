@@ -10,6 +10,7 @@ export function SidePanel({
   tab,
   setTab,
   onClose,
+  onHome,
   paper,
   page,
   goToPage,
@@ -22,6 +23,7 @@ export function SidePanel({
   setTone,
   chat,
   actions,
+  summary,
   references,
   commandKey,
   loading,
@@ -29,6 +31,7 @@ export function SidePanel({
   tab: PanelTab
   setTab: (tab: PanelTab) => void
   onClose: () => void
+  onHome: () => void
   paper: Paper | null
   page: number
   goToPage: (page: number) => void
@@ -41,6 +44,7 @@ export function SidePanel({
   setTone: (tone: Tone) => void
   chat: ReactNode
   actions: ReactNode
+  summary: ReactNode
   references: ReactNode
   commandKey: string
   loading: boolean
@@ -129,6 +133,11 @@ export function SidePanel({
 
       {tab === 'paper' ? (
         <div className="paper-panel" id="paper-panel" role="tabpanel" aria-labelledby="paper-tab">
+          <button className="panel-home" onClick={onHome} aria-label="← Your library">
+            <Icon name="left" size={15} />
+            <span>Home · Your library</span>
+            <kbd>{commandKey}⇧H</kbd>
+          </button>
           <div className="panel-scroll">
             <div className="paper-info">
               <span className="eyebrow">ON YOUR DESK</span>
@@ -139,6 +148,7 @@ export function SidePanel({
                   : 'Open a paper and settle in.'}
               </p>
             </div>
+            {summary}
             <button className="open-button" onClick={openFile} disabled={loading}>
               <Icon name="open" />
               <span>{loading ? 'Opening paper…' : 'Open a paper'}</span>
@@ -282,6 +292,12 @@ export function SidePanel({
                 <Icon name="down" size={14} />
               </summary>
               <dl>
+                <div>
+                  <dt>Home / library</dt>
+                  <dd>
+                    <kbd>{commandKey}⇧H</kbd>
+                  </dd>
+                </div>
                 <div>
                   <dt>Open a paper</dt>
                   <dd>

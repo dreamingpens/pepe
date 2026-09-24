@@ -1,0 +1,11 @@
+{
+  "date": "2026-09-24T16:28:51.640Z",
+  "model": "gpt-6-astra",
+  "paper": "attention-is-all-you-need",
+  "groups": 5,
+  "childBullets": 21,
+  "maximumDepth": 3,
+  "longestLeafWords": 11,
+  "validSources": 24,
+  "passed": true
+}

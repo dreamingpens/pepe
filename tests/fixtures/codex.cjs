@@ -42,7 +42,22 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       : /Summarize the paper/.test(prompt)
         ? /one concise paragraph/.test(prompt)
           ? 'The Transformer uses attention to model sequences. [p. 4](paper://page/4#line=p4-l15)'
-          : '- The Transformer uses attention. [p. 4](paper://page/4#line=p4-l15)\n- Its attention weights combine values.'
+          : [
+              '- **Problem**',
+              '  - Recurrent models process tokens sequentially.',
+              '  - Sequential computation limits training parallelism.',
+              '- **Method**',
+              '  - The Transformer uses attention. [p. 4](paper://page/4#line=p4-l15)',
+              '    - Queries and keys determine attention weights.',
+              '    - Weighted values produce each output.',
+              '  - Multiple heads capture different relationships.',
+              '- **Findings**',
+              '  - Translation quality improves on the evaluated benchmarks.',
+              '  - Parallel computation reduces training time.',
+              '- **Limitations**',
+              '  - Full attention compares every pair of tokens.',
+              '  - Longer sequences increase computational cost.',
+            ].join('\n')
         : 'Attention combines queries, keys, and values: $QK^T$. [p. 4](paper://page/4#line=p4-l15)'
     reply({ turn: { id: turnId, status: 'inProgress' } })
     const timers = []

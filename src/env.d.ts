@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 type ReaderCommand =
-  'toggle-chat' | 'toggle-paper' | 'open-paper' | 'zoom-in' | 'zoom-out' | 'reset-zoom'
+  'toggle-chat' | 'toggle-paper' | 'open-paper' | 'go-home' | 'zoom-in' | 'zoom-out' | 'reset-zoom'
 
 interface Window {
   pepe?: {

@@ -60,7 +60,19 @@ test('dashboard folders, saved papers, keyword search, and cached summaries surv
     await expect(page.locator('.library-paper')).toHaveCount(1)
     await page.getByRole('button', { name: 'Summarize paper' }).click()
     await expect(page.locator('.quick-summary .answer-markdown')).toContainText('Transformer')
-    await expect(page.locator('.quick-summary li')).toHaveCount(2)
+    await expect(page.locator('.quick-summary .answer-markdown > ul > li')).toHaveCount(4)
+    await expect(page.locator('.quick-summary .answer-markdown > ul > li > ul > li')).toHaveCount(8)
+    await expect(page.locator('.quick-summary .answer-markdown ul ul ul > li')).toHaveCount(2)
+    await page.screenshot({ path: 'artifacts/outline-summary.png' })
+    await page.getByRole('button', { name: 'Regenerate summary', exact: true }).click()
+    await expect(
+      page.getByRole('button', { name: 'Regenerate summary', exact: true }),
+    ).toBeEnabled()
+    const requests = (await readFile(join(base, 'rpc.jsonl'), 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    expect(requests.filter((request) => request.method === 'turn/start')).toHaveLength(2)
     await page.getByLabel('Quick summary format').selectOption('paragraph')
     await page.getByRole('button', { name: 'Summarize paper' }).click()
     await expect(page.locator('.quick-summary .answer-markdown')).toContainText('model sequences')
@@ -83,6 +95,214 @@ test('dashboard folders, saved papers, keyword search, and cached summaries surv
     await next.getByRole('button', { name: 'Transformers', exact: true }).click()
     await next.getByRole('button', { name: 'Remove empty folder' }).click()
     await expect(next.getByRole('button', { name: 'Transformers', exact: true })).toHaveCount(0)
+  } finally {
+    if (restarted) await restarted.close()
+    else if (app.process().exitCode === null) await app.close()
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
+test('Paper tab generates and reuses bullet summaries with working source links', async () => {
+  const { app, page, base } = await launch()
+  try {
+    // The reader must request bullets even when the dashboard uses paragraphs.
+    await page.evaluate(() => window.pepe!.invoke('settings/save', { summaryFormat: 'paragraph' }))
+    await sample(page)
+    await page.getByRole('button', { name: 'Open reading controls' }).click()
+    const summary = page.getByRole('region', { name: 'Bullet summary' })
+    await expect(summary.getByRole('button', { name: 'Summarize paper' })).toBeVisible()
+    await summary.getByRole('button', { name: 'Summarize paper' }).click()
+    await expect(summary.locator('.answer-markdown > ul > li')).toHaveCount(4)
+    await expect(summary.locator('.answer-markdown ul ul ul > li')).toHaveCount(2)
+    await expect(summary).toContainText('The Transformer uses attention.')
+    await summary.getByRole('button', { name: 'Regenerate summary' }).click()
+    await expect(summary.locator('.answer-markdown')).toContainText(
+      'The Transformer uses attention.',
+    )
+    await expect(summary.getByRole('button', { name: 'Regenerate summary' })).toBeEnabled()
+    await page.locator('.panel-scroll').evaluate((element) => {
+      element.scrollTop = 0
+    })
+    await page.screenshot({ path: 'artifacts/paper-summary.png' })
+    await summary.getByRole('button', { name: 'p. 4', exact: true }).click()
+    await expect(page.getByRole('complementary', { name: 'Reading panel' })).toHaveCount(0)
+    await expect(page.locator('.source-highlight')).toHaveAttribute('data-source-line', 'p4-l15')
+    await expect(page.locator('.source-highlight')).toBeInViewport()
+    await page.getByRole('button', { name: 'Open reading controls' }).click()
+    await expect(summary.locator('.answer-markdown > ul > li')).toHaveCount(4)
+    await page.getByRole('tab', { name: 'Assistant', exact: true }).click()
+    await page.getByRole('tab', { name: 'Paper', exact: true }).click()
+    await expect(summary.locator('.answer-markdown > ul > li')).toHaveCount(4)
+    await summary.locator('summary').click()
+    await expect(summary.locator('.answer-markdown')).toBeHidden()
+    await expect(page.getByRole('button', { name: 'Open a paper' })).toBeInViewport()
+    const state = (await page.evaluate(() => window.pepe!.invoke('library/state'))) as LibraryState
+    expect(state.settings.summaryFormat).toBe('paragraph')
+    expect(state.papers[0].summary.bullets.status).toBe('ready')
+    const requests = (await readFile(join(base, 'rpc.jsonl'), 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    expect(requests.filter((request) => request.method === 'turn/start')).toHaveLength(2)
+  } finally {
+    await close(app, base)
+  }
+})
+
+test('nested folders support parent selection, path creation, renaming, moves, and restart', async () => {
+  const { app, page, base, env } = await launch()
+  let restarted: ElectronApplication | null = null
+  try {
+    for (const [name, parent] of [
+      ['Research', ''],
+      ['Transformers', 'Research'],
+      ['Attention/Self-attention', 'Research/Transformers'],
+    ]) {
+      await page.getByRole('button', { name: 'New folder', exact: true }).click()
+      await expect(page.getByLabel('Parent folder', { exact: true })).toHaveValue(parent)
+      await page.getByLabel('Folder name', { exact: true }).fill(name)
+      await expect(page.locator('.folder-location')).toContainText(
+        [parent, name].filter(Boolean).join('/'),
+      )
+      await page.getByRole('button', { name: 'Save folder', exact: true }).click()
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+    }
+    const original = 'Research/Transformers/Attention/Self-attention'
+    await expect(page.getByRole('button', { name: original, exact: true })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    await expect(page.getByRole('button', { name: original, exact: true })).toHaveText(
+      'Self-attention',
+    )
+    await page.getByRole('button', { name: 'Collapse Research', exact: true }).click()
+    await expect(page.getByRole('button', { name: original, exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Expand Research', exact: true }).click()
+    await page.getByRole('button', { name: original, exact: true }).click()
+
+    // A nested selection can still create a new top-level sibling.
+    await page.getByRole('button', { name: 'New folder', exact: true }).click()
+    await expect(page.getByLabel('Parent folder', { exact: true })).toHaveValue(original)
+    await page.getByLabel('Parent folder', { exact: true }).selectOption('')
+    await page.getByLabel('Folder name', { exact: true }).fill('all')
+    await page.getByRole('button', { name: 'Save folder', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'all', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+    await sample(page)
+    await page.keyboard.press(`${modifier}+Shift+l`)
+    await page.getByRole('button', { name: 'Save paper', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Save paper', exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: '← Your library', exact: true }).click()
+    await page.locator('.library-paper').click()
+    await page.getByLabel('Move paper to folder').selectOption(original)
+    await expect(page.locator('.library-paper')).toContainText(original)
+
+    await page.getByRole('button', { name: original, exact: true }).click()
+    await page.getByRole('button', { name: 'Rename', exact: true }).click()
+    await expect(page.getByLabel('Folder name', { exact: true })).toHaveValue('Self-attention')
+    await page.getByLabel('Folder name', { exact: true }).fill('Mechanisms')
+    await page.getByRole('button', { name: 'Save folder', exact: true }).click()
+    await expect(page.locator('.library-paper')).toContainText(
+      'Research/Transformers/Attention/Mechanisms',
+    )
+    await page.getByRole('button', { name: 'Research/Transformers', exact: true }).click()
+    await page.getByRole('button', { name: 'Rename', exact: true }).click()
+    await expect(page.getByLabel('Folder name', { exact: true })).toHaveValue('Transformers')
+    await page.getByLabel('Folder name', { exact: true }).fill('Architectures')
+    await page.getByRole('button', { name: 'Save folder', exact: true }).click()
+    const renamed = 'Research/Architectures/Attention/Mechanisms'
+    await page.getByRole('button', { name: renamed, exact: true }).click()
+    await expect(page.locator('.library-paper')).toContainText(renamed)
+    await page.screenshot({ path: 'artifacts/nested-folders.png' })
+    const snapshot = await page.evaluate(() => window.pepe!.invoke<LibraryState>('library/state'))
+    await readFile(join(snapshot.root, renamed, snapshot.papers[0].filename))
+
+    await app.close()
+    restarted = await electron.launch({ args: [resolve('.')], env })
+    const next = await restarted.firstWindow()
+    await next.getByRole('button', { name: 'all', exact: true }).click()
+    await expect(next.locator('.library-paper')).toHaveCount(0)
+    await next.getByRole('button', { name: renamed, exact: true }).click()
+    await expect(next.locator('.library-paper')).toContainText(renamed)
+    await next.locator('.library-paper').click()
+    await next.getByLabel('Move paper to folder').selectOption('all')
+    await next.getByRole('button', { name: 'all', exact: true }).click()
+    await expect(next.locator('.library-paper')).toHaveCount(1)
+    await next.getByRole('button', { name: renamed, exact: true }).click()
+    await next.getByRole('button', { name: 'Remove empty folder', exact: true }).click()
+    await expect(next.getByRole('button', { name: renamed, exact: true })).toHaveCount(0)
+    await expect(
+      next.getByRole('button', {
+        name: 'Research/Architectures/Attention',
+        exact: true,
+      }),
+    ).toHaveAttribute('aria-current', 'page')
+  } finally {
+    if (restarted) await restarted.close()
+    else if (app.process().exitCode === null) await app.close()
+    await rm(base, { recursive: true, force: true })
+  }
+})
+
+test('home controls and resizable summary panels work and remember the chosen size', async () => {
+  const { app, page, base, env } = await launch()
+  let restarted: ElectronApplication | null = null
+  try {
+    await sample(page)
+    await page.keyboard.press(`${modifier}+Shift+l`)
+    await expect(page.locator('.panel-home')).toContainText('Home')
+    await page.getByRole('button', { name: 'Save paper', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'Save paper', exact: true })).toHaveCount(0)
+    await page.getByRole('button', { name: '← Your library', exact: true }).click()
+    await page.locator('.library-paper').dblclick()
+    await expect(page.locator('.pdf-page canvas').first()).toBeVisible()
+    await page.keyboard.press(`${modifier}+l`)
+    await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      window.focus()
+      const modifiers: ('meta' | 'control' | 'shift')[] = [
+        process.platform === 'darwin' ? 'meta' : 'control',
+        'shift',
+      ]
+      window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'H', modifiers })
+      window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'H', modifiers })
+    })
+    await expect(page.locator('.dashboard')).toBeVisible()
+    await expect(page.locator('.side-panel')).toHaveCount(0)
+    await page.locator('.library-paper').click()
+    const panel = page.getByRole('complementary', { name: 'Paper summary' })
+    const handle = page.getByRole('separator', { name: 'Resize summary panel' })
+    const initial = (await panel.boundingBox())!.width
+    const grip = (await handle.boundingBox())!
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(grip.x - 130, grip.y + grip.height / 2, { steps: 8 })
+    await page.mouse.up()
+    await expect.poll(async () => (await panel.boundingBox())!.width).toBeGreaterThan(initial + 100)
+    await handle.focus()
+    await handle.press('ArrowRight')
+    const width = (await panel.boundingBox())!.width
+    await page.screenshot({ path: 'artifacts/resizable-summary.png' })
+    await app.close()
+    restarted = await electron.launch({ args: [resolve('.')], env })
+    const next = await restarted.firstWindow()
+    await next.locator('.library-paper').click()
+    const restored = next.getByRole('complementary', { name: 'Paper summary' })
+    expect(Math.abs((await restored.boundingBox())!.width - width)).toBeLessThan(2)
+    await next.setViewportSize({ width: 900, height: 850 })
+    const vertical = next.getByRole('separator', { name: 'Resize summary panel' })
+    await expect(vertical).toHaveAttribute('aria-orientation', 'horizontal')
+    const before = (await restored.boundingBox())!.height
+    await vertical.focus()
+    await vertical.press('ArrowDown')
+    expect((await restored.boundingBox())!.height).toBe(before + 24)
+    await vertical.press('ArrowUp')
+    expect((await restored.boundingBox())!.height).toBe(before)
+    const lastPaper = (await next.locator('.library-paper').last().boundingBox())!
+    expect((await restored.boundingBox())!.y).toBeGreaterThanOrEqual(lastPaper.y + lastPaper.height)
+    await next.screenshot({ path: 'artifacts/resizable-summary-compact.png' })
   } finally {
     if (restarted) await restarted.close()
     else if (app.process().exitCode === null) await app.close()
@@ -191,6 +411,12 @@ test('citations and equations open directly from the PDF', async () => {
     })
     await expect(page.getByRole('dialog', { name: 'Cited paper' })).toBeVisible()
     await expect(page.locator('.paper-popover h2')).toHaveText('Layer normalization')
+    await expect(page.getByRole('combobox', { name: 'Matching paper' })).toHaveCount(0)
+    await expect(
+      page
+        .getByRole('dialog', { name: 'Cited paper' })
+        .getByRole('button', { name: 'Open', exact: true }),
+    ).toBeEnabled()
     await page.keyboard.press('Escape')
     await page.keyboard.press(`${modifier}+Shift+l`)
     await page.getByLabel('Page number').fill('4')

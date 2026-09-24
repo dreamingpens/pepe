@@ -40,8 +40,14 @@ export async function fetchPublic(
       url = new URL(next, url).href
       continue
     }
-    if (!response.ok)
-      throw new Error(`The paper source returned ${response.status}. Please try again later.`)
+    if (!response.ok) {
+      await response.body?.cancel()
+      const error = new Error(
+        `The paper source returned ${response.status}. Please try again later.`,
+      )
+      error.status = response.status
+      throw error
+    }
     if (Number(response.headers.get('content-length')) > maxBytes) {
       await response.body?.cancel()
       throw new Error('This download is too large (100 MB limit).')
@@ -81,16 +87,22 @@ const cache = new Map()
 let arxivQueue = Promise.resolve(),
   lastRequest = 0
 
-export async function searchArxiv(query) {
+export async function searchArxiv(
+  query,
+  { signal, titleOnly = false, fetcher = fetchPublic } = {},
+) {
   query = query.trim().slice(0, 500)
   if (!query) return []
-  if (cache.has(query) && Date.now() - cache.get(query).time < 300_000)
-    return cache.get(query).value
+  const cacheKey = `${titleOnly ? 'title' : 'all'}:${query}`
+  if (cache.has(cacheKey) && Date.now() - cache.get(cacheKey).time < 300_000)
+    return cache.get(cacheKey).value
   const task = arxivQueue
     .catch(() => {})
     .then(async () => {
+      signal?.throwIfAborted()
       const delay = Math.max(0, 3000 - (Date.now() - lastRequest))
       if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+      signal?.throwIfAborted()
       lastRequest = Date.now()
       const id = arxivId(query)
       const url = new URL('https://export.arxiv.org/api/query')
@@ -100,13 +112,18 @@ export async function searchArxiv(query) {
         url.searchParams.set(
           'search_query',
           query
-            .split(/\s+/)
-            .filter(Boolean)
-            .map((word) => `all:"${word.replace(/["\\:]/g, '')}"`)
-            .join(' AND '),
+            .match(/[\p{L}\p{N}]+/gu)
+            ?.filter(
+              (word) =>
+                !/^(?:a|an|the|of|in|on|for|to|and|or|with|by|at|from|is|are|as)$/i.test(word),
+            )
+            .map((word) => `${titleOnly ? 'ti' : 'all'}:"${word.replace(/["\\:]/g, '')}"`)
+            .join(' AND ') || `all:"${query.replace(/["\\:]/g, '')}"`,
         )
       url.searchParams.set('max_results', '12')
-      const data = parser.parse(await fetchPublic(url.href, { text: true, maxBytes: 2_000_000 }))
+      const data = parser.parse(
+        await fetcher(url.href, { signal, text: true, maxBytes: 2_000_000 }),
+      )
       const entries = data.feed?.entry
         ? Array.isArray(data.feed.entry)
           ? data.feed.entry
@@ -135,7 +152,7 @@ export async function searchArxiv(query) {
             source: 'arXiv',
           }
         })
-      cache.set(query, { time: Date.now(), value: results })
+      if (results.length) cache.set(cacheKey, { time: Date.now(), value: results })
       return results
     })
   arxivQueue = task
@@ -166,25 +183,4 @@ async function searchCrossref(query) {
     pdfUrl: work.link?.find((link) => link['content-type'] === 'application/pdf')?.URL || '',
     source: 'Crossref',
   }))
-}
-
-export async function resolveReference(reference) {
-  if (reference.arxiv)
-    return [
-      {
-        id: reference.arxiv,
-        title: reference.title,
-        authors: '',
-        year: reference.year,
-        abstract: '',
-        url: `https://arxiv.org/abs/${reference.arxiv}`,
-        pdfUrl: `https://arxiv.org/pdf/${reference.arxiv}`,
-        source: 'arXiv',
-      },
-    ]
-  const query = reference.title || reference.text
-  let results = await searchArxiv(query).catch(() => [])
-  if (!results.length) results = await searchCrossref(reference.text || query)
-  // The user sees candidates and chooses; a weak metadata match is never silently downloaded.
-  return results
 }

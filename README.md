@@ -29,7 +29,8 @@ The app starts on your library dashboard. Open a local PDF, drop one into the wi
 | Follow a citation                                | Click a citation in the PDF, or a reference in the Paper panel |
 | Explain a figure/equation                        | Click its region; use right-click anywhere for unusual layouts |
 | Change paper size                                | **⌘+**, **⌘−**, **⌘0**, or the Paper panel                     |
-| Return to the dashboard / save a temporary paper | Open the Paper panel                                           |
+| Return to the dashboard                         | **⌘⇧H**, or **Home · Your library** at the top of the Paper tab |
+| Save a temporary paper                          | Open the Paper panel                                           |
 | Move / close / quit                              | Drag the top strip / **⌘W** / **⌘Q**                           |
 
 Use Ctrl instead of ⌘ on other platforms; macOS is the tested platform.
@@ -42,11 +43,15 @@ Paper text is indexed with page/line locations. Visual questions additionally se
 
 ## Library and summaries
 
-The default library is `~/Documents/Pepe`. Choose another root folder from the dashboard. Create nested folders, rename them, move saved papers, and remove empty folders. Existing PDFs inside the root are discovered on startup or **Refresh library**. Local search includes titles, authors, filenames, and indexed paper text.
+The default library is `~/Documents/Pepe`. Choose another root folder from the dashboard. Select a folder and click **+** to create a subfolder, or choose a different **Parent folder** in the dialog. Enter a path such as `AI/Transformers/Attention` to create several levels at once. The folder tree can be expanded and collapsed; renaming a folder keeps its papers and subfolders together. Move saved papers to any level and remove empty folders. Existing PDFs inside the root are discovered on startup or **Refresh library**. Local search includes titles, authors, filenames, and indexed paper text.
 
-Citation popups offer **Open**, **Download**, and **Summarize**. Open uses a temporary cache without adding a PDF to your library. Download saves to the automatically managed `citations` folder and records which paper cited it. A temporarily opened citation can be saved later from the Paper panel. Metadata matches are presented as candidates; a direct PDF URL can be supplied when no downloadable match is found.
+Citation popups offer **Open**, **Download**, and **Summarize** for one automatically matched paper. Embedded arXiv IDs, DOIs, and publisher links take priority. Otherwise arXiv, Semantic Scholar, Crossref, and OpenAlex are searched concurrently with a seven-second overall deadline; titles and authors are checked before a result is accepted. Successful PDF matches are cached across app restarts. Grouped citations show one reference at a time with previous/next controls. Uncertain matches show a retry action instead of unrelated candidates. Open uses a temporary cache without adding a PDF to your library. Download saves to the automatically managed `citations` folder and records which paper cited it. A temporarily opened citation can be saved later from the Paper panel. A direct PDF URL can still be supplied when no downloadable match is found.
 
-Downloaded papers are indexed and summarized in the background. Reading and downloads do not wait for the AI summary. Select a paper on the dashboard to see its cached quick summary; choose **Bullets** or **Paragraph**. Automatic summaries can be turned off. Summaries and page images are invalidated when a refreshed file changes.
+Downloaded papers are indexed and summarized in the background. Reading and downloads do not wait for the AI summary. Select a paper on the dashboard to see its cached quick summary; choose **Bullets** or **Paragraph**. Bullets form a compact outline: short topic labels, individual ideas underneath, and a third level for supporting details when useful. **Regenerate summary** updates an existing summary using the current instructions and settings, keeping the previous version visible until the replacement is ready. Automatic summaries can be turned off. Summaries and page images are invalidated when a refreshed file changes.
+
+While reading, open the **Paper** tab to see **Bullet summary** below the paper title. It reuses the saved bullet outline independently of the dashboard's format setting. Generate or regenerate it there, collapse it to reach the reading controls, or click a page reference to return to that passage in the PDF.
+
+Drag the summary panel's left edge to change its width. In narrow windows the summary sits below the paper list; drag its bottom edge to change its height. The size is remembered. The handle also supports arrow keys, and double-clicking resets the size.
 
 PDFs live in the chosen library. The manifest, conversations, temporary PDFs, indexes, and page images live in `~/Library/Application Support/Pepe` on macOS. Codex manages its own authentication and thread storage. Paper text, selected passages, conversation context, and requested page images are sent to Codex for answers and summaries. PDF reading and existing library content work offline; AI and online discovery require connectivity.
 
